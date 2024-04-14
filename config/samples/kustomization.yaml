@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- config_v1alpha1_dnsclass.yaml
+#+kubebuilder:scaffold:manifestskustomizesamples

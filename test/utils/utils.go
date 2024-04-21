@@ -138,3 +138,7 @@ func GetProjectDir() (string, error) {
 	wd = strings.Replace(wd, "/test/e2e", "", -1)
 	return wd, nil
 }
+
+func StringPtr(s string) *string {
+	return &s
+}

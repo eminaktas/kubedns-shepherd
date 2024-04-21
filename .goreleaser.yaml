@@ -1,0 +1,118 @@
+project_name: kubedns-shepherd
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: kubedns-shepherd
+    binary: kubedns-shepherd
+    main: cmd/main.go
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .Commit }} -X main.date={{ .CommitDate }} -X main.treeState={{ .IsGitDirty }} -X main.builtBy=goreleaser
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    mod_timestamp: '{{ .CommitTimestamp }}'
+
+kos:
+  - build: kubedns-shepherd
+    main: ./cmd/...
+    base_image: ghcr.io/distroless/static:latest
+    repository: ghcr.io/eminaktas/kubedns-shepherd
+    tags:
+      - '{{ .Tag }}'
+      - '{{ if not .Prerelease }}latest{{ end }}'
+    bare: true
+    preserve_import_paths: false
+    base_import_paths: false
+    sbom: none
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    labels:
+      io.artifacthub.package.readme-url: "https://raw.githubusercontent.com/eminaktas/kubedns-shepherd/main/README.md"
+      io.artifacthub.package.maintainers: '[{"name":"Emin Aktas","email":""}]'
+      io.artifacthub.package.license: "Apache-2.0"
+      org.opencontainers.image.description: "A Kubernetes controller that manages the DNS configuration for workloads"
+      org.opencontainers.image.created: "{{ .Date }}"
+      org.opencontainers.image.name: "{{ .ProjectName }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.source: "{{ .GitURL }}"
+
+archives:
+  - name_template: >-
+      {{- .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end -}}
+    format_overrides:
+      - goos: windows
+        format: zip
+    builds_info:
+      group: root
+      owner: root
+    files:
+      - README.md
+      - LICENSE
+
+sboms:
+  - artifacts: archive
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^test:"
+      - "^test\\("
+      - "^chore"
+      - "merge conflict"
+      - Merge pull request
+      - Merge remote-tracking branch
+      - Merge branch
+      - go mod tidy
+  groups:
+    - title: Dependency updates
+      regexp: '^.*?(feat|fix|chore)\(deps\)!?:.+$'
+      order: 300
+    - title: "New Features"
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 100
+    - title: "Security updates"
+      regexp: '^.*?sec(\(.+\))??!?:.+$'
+      order: 150
+    - title: "Bug fixes"
+      regexp: '^.*?(fix|refactor)(\(.+\))??!?:.+$'
+      order: 200
+    - title: "Documentation updates"
+      regexp: ^.*?docs?(\(.+\))??!?:.+$
+      order: 400
+    - title: "Build process updates"
+      regexp: ^.*?(build|ci)(\(.+\))??!?:.+$
+      order: 400
+    - title: Other work
+      order: 9999
+
+release:
+  prerelease: auto
+  name_template: "v{{ .Version }}"
+  footer: |
+    **Full Changelog**: https://github.com/eminaktas/kubedns-shepherd/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+    **Container Image**: ghcr.io/eminaktas/kubedns-shepherd:{{ .Tag }}

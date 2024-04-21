@@ -49,12 +49,11 @@ type PodsReconciler struct {
 	MaxConcurrentReconcilesForPodsReconciler int
 }
 
-//+kubebuilder:rbac:groups=apps,resources=deployment,verbs=get;list;watch;update;patch
-//+kubebuilder:rbac:groups=apps,resources=statefulset,verbs=get;list;watch;update;patch
-//+kubebuilder:rbac:groups=apps,resources=daemonset,verbs=get;list;watch;update;patch
+//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;update;patch
-//+kubebuilder:rbac:groups=apps,resources=replicaset,verbs=get;list;watch;update;patch
-//+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;update;patch
+//+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;update;patch
+//+kubebuilder:rbac:groups=apps,resources=replicasets,verbs=get;list;watch;update;patch
+//+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;update;patch;create;delete
 //+kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 
 func (r *PodsReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -103,7 +102,7 @@ func (r *PodsReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 			dnsClass = val
 			break
 		}
-		if val.Spec.Namespaces[0] == "all" {
+		if slices.Contains(val.Spec.Namespaces, "all") {
 			dnsClass = val
 		}
 	}
@@ -117,12 +116,12 @@ func (r *PodsReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	// Get the latest condition
 	count := len(dnsClass.Status.Conditions)
 	if count == 0 {
-		return ctrl.Result{Requeue: true, RequeueAfter: reconcilePeriod}, nil
+		return ctrl.Result{Requeue: true, RequeueAfter: ReconcilePeriod}, nil
 	}
 	latestCondition := dnsClass.Status.Conditions[count-1]
 
 	// Check if DNSClass has been marked as `Downgrade` which is used when DNSClass is being deleted.
-	if latestCondition.Type == typeDegraded {
+	if latestCondition.Type == TypeDegraded {
 		logger.Info(fmt.Sprintf("%s DNSClass has been marked to be deleted", dnsClass.Name))
 		return ctrl.Result{}, nil
 	}
@@ -138,7 +137,7 @@ func (r *PodsReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 
 	// Check if DNSClass condition type is Available and status is True, othewise, stop reconciling
-	if latestCondition.Type != typeAvailable && latestCondition.Status != v1.ConditionTrue {
+	if latestCondition.Type != TypeAvailable && latestCondition.Status != v1.ConditionTrue {
 		logger.Info(fmt.Sprintf("%s DNSClass is being reconciled", dnsClass.Name))
 		return ctrl.Result{}, nil
 	}
@@ -153,7 +152,7 @@ func (r *PodsReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	err = r.configureDNSForWorkload(ctx, podWorkload, dnsClass)
 	if err != nil {
 		logger.Error(err, fmt.Sprintf("Failed to configure %+v object", *podWorkload))
-		return ctrl.Result{Requeue: true, RequeueAfter: reconcilePeriod}, nil
+		return ctrl.Result{Requeue: true, RequeueAfter: ReconcilePeriod}, nil
 	}
 
 	logger.Info(fmt.Sprintf("DNSConfig configured for %+v with %s DNSClass", *podWorkload, dnsClass.Name))
@@ -193,10 +192,12 @@ func (r *PodsReconciler) configureDNSForWorkload(ctx context.Context, podWorkloa
 			return err
 		}
 		// Wait until pod is deleted
-		waitForPodDeletion(ctx, r.Client, types.NamespacedName{
+		if err := waitForPodDeletion(ctx, r.Client, types.NamespacedName{
 			Name:      podWorkload.Name,
 			Namespace: podWorkload.Namespace,
-		})
+		}); err != nil {
+			return err
+		}
 		// Remove `resourceVersion`
 		object.SetResourceVersion("")
 		if err = r.Create(ctx, object); err != nil {

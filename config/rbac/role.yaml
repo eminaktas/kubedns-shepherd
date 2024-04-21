@@ -7,7 +7,7 @@ rules:
 - apiGroups:
   - apps
   resources:
-  - daemonset
+  - daemonsets
   verbs:
   - get
   - list
@@ -17,7 +17,7 @@ rules:
 - apiGroups:
   - apps
   resources:
-  - deployment
+  - deployments
   verbs:
   - get
   - list
@@ -27,17 +27,7 @@ rules:
 - apiGroups:
   - apps
   resources:
-  - replicaset
-  verbs:
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - apps
-  resources:
-  - statefulset
+  - replicasets
   verbs:
   - get
   - list
@@ -83,6 +73,14 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - events
   verbs:
   - create
@@ -92,6 +90,8 @@ rules:
   resources:
   - pods
   verbs:
+  - create
+  - delete
   - get
   - list
   - patch

@@ -25,9 +25,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	configv1alpha1 "github.com/eminaktas/kubedns-shepherd/api/v1alpha1"
+	"github.com/eminaktas/kubedns-shepherd/test/utils"
 )
 
 var _ = Describe("DNSClass Controller", func() {
@@ -37,8 +39,7 @@ var _ = Describe("DNSClass Controller", func() {
 		ctx := context.Background()
 
 		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+			Name: resourceName,
 		}
 		dnsclass := &configv1alpha1.DNSClass{}
 
@@ -51,14 +52,22 @@ var _ = Describe("DNSClass Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: configv1alpha1.DNSClassSpec{
+						DNSConfig: &corev1.PodDNSConfig{
+							Nameservers: []string{"10.96.0.10"},
+							Searches:    []string{"svc.cluster.local"},
+							Options: []corev1.PodDNSConfigOption{
+								{Name: "ndots", Value: utils.StringPtr("2")},
+								{Name: "edns0"},
+							},
+						},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
 		})
 
 		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
 			resource := &configv1alpha1.DNSClass{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
 			Expect(err).NotTo(HaveOccurred())

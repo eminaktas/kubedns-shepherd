@@ -1,3 +1,19 @@
+/*
+Copyright 2024.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package controller
 
 import (
@@ -18,18 +34,33 @@ import (
 // Definitions
 const (
 	// typeAvailable represents the status of the object reconciliation
-	typeAvailable = "Available"
+	TypeAvailable = "Available"
 	// typeDegraded represents the status used when DNSClass is deleted and the finalizer operations are must to occur.
-	typeDegraded = "Degraded"
+	TypeDegraded = "Degraded"
 
-	reconcilePeriod = 1 * time.Second
+	ReconcilePeriod = 1 * time.Second
 
-	finalizerString = "config.kubedns-shepherd.io/finalizer"
+	FinalizerString = "config.kubedns-shepherd.io/finalizer"
 
+	// Annotation keys
 	DNSConfigurationDisabled = "kubedns-shepherd.io/dns-configuration-disabled"
 	DNSConfigured            = "kubedns-shepherd.io/dns-configured"
 	DNSClassName             = "kubedns-shepherd.io/dns-class-name"
 	IsReconciled             = "kubedns-shepherd.io/is-reconciled"
+
+	deploymentStr  = "Deployment"
+	daemonsetStr   = "DaemonSet"
+	statefulsetStr = "StatefulSet"
+	replicasetStr  = "ReplicaSet"
+	podStr         = "Pod"
+
+	trueStr  = "false"
+	falseStr = "false"
+)
+
+var (
+	errUnkownKind      = errors.New("unknown kind")
+	errUnkownOwnerKind = errors.New("unknown owner kind")
 )
 
 // Define a function to wait for a Pod to be deleted
@@ -47,13 +78,13 @@ func waitForPodDeletion(ctx context.Context, c client.Client, podName types.Name
 		}
 
 		// Pod still exists, wait for a short duration before checking again
-		time.Sleep(reconcilePeriod)
+		time.Sleep(ReconcilePeriod)
 	}
 }
 
 func getWorkloadObject(ctx context.Context, c client.Client, pod *corev1.Pod) (*Workload, error) {
 	for _, owner := range pod.OwnerReferences {
-		if owner.Kind == "ReplicaSet" {
+		if owner.Kind == replicasetStr {
 			var rs appsv1.ReplicaSet
 			err := c.Get(ctx, client.ObjectKey{
 				Namespace: pod.Namespace,
@@ -72,7 +103,7 @@ func getWorkloadObject(ctx context.Context, c client.Client, pod *corev1.Pod) (*
 			}
 
 			for _, rsOwner := range rs.OwnerReferences {
-				if rsOwner.Kind == "Deployment" || rsOwner.Kind == "DaemonSet" || rsOwner.Kind == "StatefulSet" {
+				if rsOwner.Kind == deploymentStr || rsOwner.Kind == daemonsetStr || rsOwner.Kind == statefulsetStr {
 					return &Workload{
 						Name:      rsOwner.Name,
 						Namespace: pod.Namespace,
@@ -80,14 +111,14 @@ func getWorkloadObject(ctx context.Context, c client.Client, pod *corev1.Pod) (*
 					}, nil
 				}
 			}
-		} else if owner.Kind == "DaemonSet" || owner.Kind == "Deployment" || owner.Kind == "StatefulSet" {
+		} else if owner.Kind == daemonsetStr || owner.Kind == deploymentStr || owner.Kind == statefulsetStr {
 			return &Workload{
 				Name:      owner.Name,
 				Namespace: pod.Namespace,
 				Kind:      owner.Kind,
 			}, nil
 		} else {
-			return nil, errors.New("unknown owner kind")
+			return nil, errUnkownOwnerKind
 		}
 	}
 
@@ -116,7 +147,7 @@ func setDNSPolicyTo(obj client.Object, dnsPolicy corev1.DNSPolicy) error {
 		o.Spec.DNSPolicy = dnsPolicy
 		return nil
 	default:
-		return errors.New("unknown kind")
+		return errUnkownKind
 	}
 }
 
@@ -138,24 +169,24 @@ func setDNSConfig(obj client.Object, dnsConfig *corev1.PodDNSConfig) error {
 		o.Spec.DNSConfig = dnsConfig
 		return nil
 	default:
-		return errors.New("unknown kind")
+		return errUnkownKind
 	}
 }
 
 func getObjectFromKindString(kind string) (client.Object, error) {
 	switch kind {
-	case "Deployment":
+	case deploymentStr:
 		return &appsv1.Deployment{}, nil
-	case "StatefulSet":
+	case statefulsetStr:
 		return &appsv1.StatefulSet{}, nil
-	case "DaemonSet":
+	case daemonsetStr:
 		return &appsv1.DaemonSet{}, nil
-	case "ReplicaSet":
+	case replicasetStr:
 		return &appsv1.ReplicaSet{}, nil
-	case "Pod":
+	case podStr:
 		return &corev1.Pod{}, nil
 	default:
-		return nil, errors.New("unknown kind")
+		return nil, errUnkownKind
 	}
 }
 
@@ -213,7 +244,7 @@ func getDNSConfig(obj client.Object) *corev1.PodDNSConfig {
 func isDNSConfigurable(obj client.Object) bool {
 	annotations := getAnnotations(obj)
 	if val, ok := annotations[DNSConfigurationDisabled]; ok {
-		if val == "true" {
+		if val == trueStr {
 			return true
 		}
 	}
@@ -227,7 +258,7 @@ func isDNSConfigured(obj client.Object, dnsClass *corev1.PodDNSConfig) bool {
 	dnsConfig := getDNSConfig(obj)
 
 	if val, ok := annotations[DNSConfigured]; ok {
-		if val == "true" {
+		if val == trueStr {
 			// Check if the DNS configuration is altered
 			if dnsPolicy != corev1.DNSNone {
 				return false
@@ -261,7 +292,7 @@ func removeAnnotation(obj client.Object, key string) error {
 		delete(o.Annotations, key)
 		return nil
 	default:
-		return errors.New("unknown kind")
+		return errUnkownKind
 	}
 }
 
@@ -298,7 +329,7 @@ func updateAnnotation(obj client.Object, key, value string) error {
 		o.Annotations[key] = value
 		return nil
 	default:
-		return errors.New("unknown kind")
+		return errUnkownKind
 	}
 }
 
@@ -332,7 +363,7 @@ type dnsClassPredicate struct {
 func (*dnsClassPredicate) Create(e event.CreateEvent) bool {
 	annotations := e.Object.GetAnnotations()
 	if val, ok := annotations[IsReconciled]; ok {
-		return val == "false"
+		return val == falseStr
 	}
 	return true
 }

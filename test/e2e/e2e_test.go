@@ -60,7 +60,7 @@ var _ = Describe("controller", Ordered, func() {
 			var err error
 
 			// projectimage stores the name of the image used in the example
-			var projectimage = "example.com/kubedns-shepherd:v0.0.1"
+			var projectimage = "eminaktas/kubedns-shepherd:v0.0.1"
 
 			By("building the manager(Operator) image")
 			cmd := exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", projectimage))
@@ -73,7 +73,7 @@ var _ = Describe("controller", Ordered, func() {
 
 			By("installing CRDs")
 			cmd = exec.Command("make", "install")
-			_, err = utils.Run(cmd)
+			_, _ = utils.Run(cmd)
 
 			By("deploying the controller-manager")
 			cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", projectimage))

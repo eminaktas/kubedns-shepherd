@@ -19,12 +19,15 @@ package main
 import (
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"os"
 
+	_ "embed"
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	goversion "github.com/caarlos0/go-version"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -42,6 +45,12 @@ import (
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
+
+	version   = ""
+	commit    = ""
+	treeState = ""
+	date      = ""
+	builtBy   = ""
 )
 
 func init() {
@@ -52,6 +61,7 @@ func init() {
 }
 
 func main() {
+	var printVersion bool
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
@@ -60,6 +70,7 @@ func main() {
 	var disablePodReconciling bool
 	var maxConcurrentReconcilesForPodsReconciler int
 	var maxConcurrentReconcilesForDNSClassReconciler int
+	flag.BoolVar(&printVersion, "version", false, "Prints the version")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
@@ -70,20 +81,24 @@ func main() {
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	flag.BoolVar(&disablePodReconciling, "disable-pod-reconciling", false,
-		"If set, disables dynamic DNS configuration for pods without owner references."+
+		"If set, disables dynamic DNS configuration for pods without owner references. "+
 			"This prevents potential data loss if the controller restarts or is removed "+
 			"while working on a pod object, due to limitations in updating pod resources.")
 	flag.IntVar(&maxConcurrentReconcilesForPodsReconciler, "max-concurrent-reconciles-for-pods-reconciler", 4,
 		"Specifies the maximum number of concurrent reconciles for the Pods reconciler.")
 	flag.IntVar(&maxConcurrentReconcilesForDNSClassReconciler, "max-concurrent-reconciles-for-dnsclass-reconciler", 2,
 		"Specifies the maximum number of concurrent reconciles for the DNSClass reconciler.")
-	opts := zap.Options{
-		Development: true,
-	}
+	opts := zap.Options{}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	if printVersion {
+		buildVersion := buildVersion()
+		fmt.Println(buildVersion.String())
+		os.Exit(0)
+	}
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
@@ -106,7 +121,10 @@ func main() {
 	})
 
 	if disablePodReconciling {
-		setupLog.Info("disablePodReconciling is enabled. Disabled dynamic DNS configuration for pods without owner references")
+		setupLog.Info(
+			"disablePodReconciling is enabled. Disabled dynamic DNS configuration " +
+				"for pods without owner references",
+		)
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
@@ -176,4 +194,36 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+const website = "https://github.com/eminaktas/kubedns-shepherd"
+
+//go:embed "art.txt"
+var asciiArt string
+
+func buildVersion() goversion.Info {
+	return goversion.GetVersionInfo(
+		goversion.WithAppDetails(
+			"kubedns-shepherd",
+			"A Kubernetes controller that manages the DNS configuration for workloads",
+			website),
+		goversion.WithASCIIName(asciiArt),
+		func(i *goversion.Info) {
+			if commit != "" {
+				i.GitCommit = commit
+			}
+			if treeState != "" {
+				i.GitTreeState = treeState
+			}
+			if date != "" {
+				i.BuildDate = date
+			}
+			if version != "" {
+				i.GitVersion = version
+			}
+			if builtBy != "" {
+				i.BuiltBy = builtBy
+			}
+		},
+	)
 }

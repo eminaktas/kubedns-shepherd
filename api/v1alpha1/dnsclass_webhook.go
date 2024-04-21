@@ -64,27 +64,25 @@ var allowedDNSPolicies = []string{string(corev1.DNSClusterFirst), string(corev1.
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *DNSClass) ValidateCreate() (admission.Warnings, error) {
 	dnsclasslog.Info("validate create", "name", r.Name)
-
-	if !slices.Contains(allowedDNSPolicies, r.Spec.ResetDNSPolicyTo) {
-		return nil, fmt.Errorf("%s is not allowed for resetDNSPolicyTo. Allowed DNS Policies: %v", r.Spec.ResetDNSPolicyTo, allowedDNSPolicies)
-	}
-	return nil, nil
+	return r.validate()
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
 func (r *DNSClass) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
 	dnsclasslog.Info("validate update", "name", r.Name)
-
-	if !slices.Contains(allowedDNSPolicies, r.Spec.ResetDNSPolicyTo) {
-		return nil, fmt.Errorf("%s is not allowed for resetDNSPolicyTo. Allowed DNS Policies: %v", r.Spec.ResetDNSPolicyTo, allowedDNSPolicies)
-	}
-	return nil, nil
+	return r.validate()
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
 func (r *DNSClass) ValidateDelete() (admission.Warnings, error) {
 	dnsclasslog.Info("validate delete", "name", r.Name)
-
 	// Not used.
+	return nil, nil
+}
+
+func (r *DNSClass) validate() (admission.Warnings, error) {
+	if !slices.Contains(allowedDNSPolicies, r.Spec.ResetDNSPolicyTo) {
+		return nil, fmt.Errorf("%s is not allowed for resetDNSPolicyTo. Allowed DNS Policies: %v", r.Spec.ResetDNSPolicyTo, allowedDNSPolicies)
+	}
 	return nil, nil
 }

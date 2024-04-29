@@ -19,33 +19,25 @@ package controller
 import (
 	"context"
 	"fmt"
-	"reflect"
-	"slices"
 
-	configv1alpha1 "github.com/eminaktas/kubedns-shepherd/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-)
 
-type Workload struct {
-	Name      string
-	Namespace string
-	Kind      string
-}
+	configv1alpha1 "github.com/eminaktas/kubedns-shepherd/api/v1alpha1"
+	"github.com/eminaktas/kubedns-shepherd/internal/common"
+)
 
 // PodsReconciler reconciles a Pods object
 type PodsReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
 
-	DisablePodReconciling                    bool
+	EnablePodReconciling                     bool
 	MaxConcurrentReconcilesForPodsReconciler int
 }
 
@@ -70,58 +62,40 @@ func (r *PodsReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 		logger.Error(err, "Failed to get pod object")
 	}
 
-	podWorkload, err := getWorkloadObject(ctx, r.Client, &pod)
+	podWorkload, err := common.GetWorkloadObject(ctx, r.Client, &pod)
 	if err != nil {
 		logger.Info("Unsupported workload object", "error", err)
 		return ctrl.Result{}, nil
 	}
 
-	if r.DisablePodReconciling {
+	if !r.EnablePodReconciling {
 		if podWorkload.Kind == "Pod" {
 			return ctrl.Result{}, nil
 		}
 	}
 
-	dnsConfigurationDisabled := isDNSConfigurable(&pod)
+	dnsConfigurationDisabled := common.IsDNSConfigurable(&pod)
 	if dnsConfigurationDisabled {
-		logger.Info(fmt.Sprintf("DNS configuration has been disabled with %s=true annotation", DNSConfigurationDisabled))
+		logger.Info(fmt.Sprintf("DNS configuration has been disabled with %s=true annotation", common.DNSConfigurationDisabled))
 		return ctrl.Result{}, nil
 	}
 
-	// Get DNSClass object
 	var dnsClass configv1alpha1.DNSClass
-	var dnsClassList configv1alpha1.DNSClassList
-	err = r.List(ctx, &dnsClassList)
+	dnsClass, err = common.GetDNSClass(ctx, r.Client, pod.Namespace)
 	if err != nil {
-		logger.Error(err, "Failed to list DNSClass objects")
-		return ctrl.Result{}, err
-	}
-
-	for _, val := range dnsClassList.Items {
-		if slices.Contains(val.Spec.Namespaces, pod.Namespace) {
-			dnsClass = val
-			break
-		}
-		if slices.Contains(val.Spec.Namespaces, "all") {
-			dnsClass = val
-		}
-	}
-
-	// If no DNSClass found, stop reconciling
-	if reflect.DeepEqual(dnsClass, configv1alpha1.DNSClass{}) {
-		logger.Info("No DNSClass found for the object")
+		logger.Error(err, "Failed to find a DNSClass")
 		return ctrl.Result{}, nil
 	}
 
 	// Get the latest condition
 	count := len(dnsClass.Status.Conditions)
 	if count == 0 {
-		return ctrl.Result{Requeue: true, RequeueAfter: ReconcilePeriod}, nil
+		return ctrl.Result{Requeue: true, RequeueAfter: common.ReconcilePeriod}, nil
 	}
 	latestCondition := dnsClass.Status.Conditions[count-1]
 
 	// Check if DNSClass has been marked as `Downgrade` which is used when DNSClass is being deleted.
-	if latestCondition.Type == TypeDegraded {
+	if latestCondition.Type == common.TypeDegraded {
 		logger.Info(fmt.Sprintf("%s DNSClass has been marked to be deleted", dnsClass.Name))
 		return ctrl.Result{}, nil
 	}
@@ -130,19 +104,19 @@ func (r *PodsReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	if annotations == nil {
 		return ctrl.Result{}, nil
 	}
-	if isReconciledAnnotation, ok := annotations[IsReconciled]; ok {
+	if isReconciledAnnotation, ok := annotations[common.IsReconciled]; ok {
 		if isReconciledAnnotation == "false" {
 			return ctrl.Result{}, nil
 		}
 	}
 
 	// Check if DNSClass condition type is Available and status is True, othewise, stop reconciling
-	if latestCondition.Type != TypeAvailable && latestCondition.Status != v1.ConditionTrue {
+	if latestCondition.Type != common.TypeAvailable && latestCondition.Status != v1.ConditionTrue {
 		logger.Info(fmt.Sprintf("%s DNSClass is being reconciled", dnsClass.Name))
 		return ctrl.Result{}, nil
 	}
 
-	alreadyDNSConfigured := isDNSConfigured(&pod, dnsClass.Spec.DNSConfig)
+	alreadyDNSConfigured := common.IsDNSConfigured(&pod, dnsClass.Spec.DNSConfig)
 	if alreadyDNSConfigured {
 		logger.Info("DNS configuration has been configured, no need to reconcile")
 		return ctrl.Result{}, nil
@@ -152,7 +126,7 @@ func (r *PodsReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	err = r.configureDNSForWorkload(ctx, podWorkload, dnsClass)
 	if err != nil {
 		logger.Error(err, fmt.Sprintf("Failed to configure %+v object", *podWorkload))
-		return ctrl.Result{Requeue: true, RequeueAfter: ReconcilePeriod}, nil
+		return ctrl.Result{Requeue: true, RequeueAfter: common.ReconcilePeriod}, nil
 	}
 
 	logger.Info(fmt.Sprintf("DNSConfig configured for %+v with %s DNSClass", *podWorkload, dnsClass.Name))
@@ -160,8 +134,8 @@ func (r *PodsReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	return ctrl.Result{}, nil
 }
 
-func (r *PodsReconciler) configureDNSForWorkload(ctx context.Context, podWorkload *Workload, dnsClass configv1alpha1.DNSClass) error {
-	object, err := getObjectFromKindString(podWorkload.Kind)
+func (r *PodsReconciler) configureDNSForWorkload(ctx context.Context, podWorkload *common.Workload, dnsClass configv1alpha1.DNSClass) error {
+	object, err := common.GetObjectFromKindString(podWorkload.Kind)
 	if err != nil {
 		return err
 	}
@@ -170,19 +144,19 @@ func (r *PodsReconciler) configureDNSForWorkload(ctx context.Context, podWorkloa
 		return err
 	}
 
-	if err = setDNSConfig(object, dnsClass.Spec.DNSConfig); err != nil {
+	if err = common.SetDNSConfig(object, dnsClass.Spec.DNSConfig); err != nil {
 		return err
 	}
 
-	if err = setDNSPolicyTo(object, corev1.DNSNone); err != nil {
+	if err = common.SetDNSPolicyTo(object, corev1.DNSNone); err != nil {
 		return err
 	}
 
-	if err = updateAnnotation(object, DNSConfigured, "true"); err != nil {
+	if err = common.UpdateAnnotation(object, common.DNSConfigured, "true"); err != nil {
 		return err
 	}
 
-	if err = updateAnnotation(object, DNSClassName, dnsClass.Name); err != nil {
+	if err = common.UpdateAnnotation(object, common.DNSClassName, dnsClass.Name); err != nil {
 		return err
 	}
 
@@ -192,7 +166,7 @@ func (r *PodsReconciler) configureDNSForWorkload(ctx context.Context, podWorkloa
 			return err
 		}
 		// Wait until pod is deleted
-		if err := waitForPodDeletion(ctx, r.Client, types.NamespacedName{
+		if err := common.WaitForPodDeletion(ctx, r.Client, types.NamespacedName{
 			Name:      podWorkload.Name,
 			Namespace: podWorkload.Namespace,
 		}); err != nil {
@@ -219,7 +193,7 @@ func (r *PodsReconciler) configureDNSForWorkload(ctx context.Context, podWorkloa
 func (r *PodsReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Pod{}).
-		WithEventFilter(&podPredicate{}).
+		WithEventFilter(&common.PodPredicate{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: r.MaxConcurrentReconcilesForPodsReconciler}).
 		Complete(r)
 }

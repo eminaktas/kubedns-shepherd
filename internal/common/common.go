@@ -14,12 +14,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package common
 
 import (
 	"context"
 	"errors"
 	"reflect"
+	"slices"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -29,6 +30,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+
+	configv1alpha1 "github.com/eminaktas/kubedns-shepherd/api/v1alpha1"
 )
 
 // Definitions
@@ -48,14 +51,14 @@ const (
 	DNSClassName             = "kubedns-shepherd.io/dns-class-name"
 	IsReconciled             = "kubedns-shepherd.io/is-reconciled"
 
-	deploymentStr  = "Deployment"
-	daemonsetStr   = "DaemonSet"
-	statefulsetStr = "StatefulSet"
-	replicasetStr  = "ReplicaSet"
-	podStr         = "Pod"
+	DeploymentStr  = "Deployment"
+	DaemonsetStr   = "DaemonSet"
+	StatefulsetStr = "StatefulSet"
+	ReplicasetStr  = "ReplicaSet"
+	PodStr         = "Pod"
 
-	trueStr  = "false"
-	falseStr = "false"
+	TrueStr  = "false"
+	FalseStr = "false"
 )
 
 var (
@@ -63,8 +66,39 @@ var (
 	errUnkownOwnerKind = errors.New("unknown owner kind")
 )
 
+type Workload struct {
+	Name      string
+	Namespace string
+	Kind      string
+}
+
+func GetDNSClass(ctx context.Context, c client.Client, podNamespace string) (configv1alpha1.DNSClass, error) {
+	var dnsClass configv1alpha1.DNSClass
+	var dnsClassList configv1alpha1.DNSClassList
+	err := c.List(ctx, &dnsClassList)
+	if err != nil {
+		return configv1alpha1.DNSClass{}, err
+	}
+
+	for _, val := range dnsClassList.Items {
+		if slices.Contains(val.Spec.Namespaces, podNamespace) {
+			dnsClass = val
+			break
+		}
+		if slices.Contains(val.Spec.Namespaces, "all") {
+			dnsClass = val
+		}
+	}
+
+	if reflect.DeepEqual(dnsClass, configv1alpha1.DNSClass{}) {
+		return configv1alpha1.DNSClass{}, errors.New("no dnsclass found")
+	}
+
+	return dnsClass, nil
+}
+
 // Define a function to wait for a Pod to be deleted
-func waitForPodDeletion(ctx context.Context, c client.Client, podName types.NamespacedName) error {
+func WaitForPodDeletion(ctx context.Context, c client.Client, podName types.NamespacedName) error {
 	for {
 		// Check if the Pod still exists
 		pod := &corev1.Pod{}
@@ -82,9 +116,9 @@ func waitForPodDeletion(ctx context.Context, c client.Client, podName types.Name
 	}
 }
 
-func getWorkloadObject(ctx context.Context, c client.Client, pod *corev1.Pod) (*Workload, error) {
+func GetWorkloadObject(ctx context.Context, c client.Client, pod *corev1.Pod) (*Workload, error) {
 	for _, owner := range pod.OwnerReferences {
-		if owner.Kind == replicasetStr {
+		if owner.Kind == ReplicasetStr {
 			var rs appsv1.ReplicaSet
 			err := c.Get(ctx, client.ObjectKey{
 				Namespace: pod.Namespace,
@@ -103,7 +137,7 @@ func getWorkloadObject(ctx context.Context, c client.Client, pod *corev1.Pod) (*
 			}
 
 			for _, rsOwner := range rs.OwnerReferences {
-				if rsOwner.Kind == deploymentStr || rsOwner.Kind == daemonsetStr || rsOwner.Kind == statefulsetStr {
+				if rsOwner.Kind == DeploymentStr || rsOwner.Kind == DaemonsetStr || rsOwner.Kind == StatefulsetStr {
 					return &Workload{
 						Name:      rsOwner.Name,
 						Namespace: pod.Namespace,
@@ -111,7 +145,7 @@ func getWorkloadObject(ctx context.Context, c client.Client, pod *corev1.Pod) (*
 					}, nil
 				}
 			}
-		} else if owner.Kind == daemonsetStr || owner.Kind == deploymentStr || owner.Kind == statefulsetStr {
+		} else if owner.Kind == DaemonsetStr || owner.Kind == DeploymentStr || owner.Kind == StatefulsetStr {
 			return &Workload{
 				Name:      owner.Name,
 				Namespace: pod.Namespace,
@@ -129,7 +163,7 @@ func getWorkloadObject(ctx context.Context, c client.Client, pod *corev1.Pod) (*
 	}, nil
 }
 
-func setDNSPolicyTo(obj client.Object, dnsPolicy corev1.DNSPolicy) error {
+func SetDNSPolicyTo(obj client.Object, dnsPolicy corev1.DNSPolicy) error {
 	switch o := obj.(type) {
 	case *appsv1.Deployment:
 		o.Spec.Template.Spec.DNSPolicy = dnsPolicy
@@ -151,7 +185,7 @@ func setDNSPolicyTo(obj client.Object, dnsPolicy corev1.DNSPolicy) error {
 	}
 }
 
-func setDNSConfig(obj client.Object, dnsConfig *corev1.PodDNSConfig) error {
+func SetDNSConfig(obj client.Object, dnsConfig *corev1.PodDNSConfig) error {
 	switch o := obj.(type) {
 	case *appsv1.Deployment:
 		o.Spec.Template.Spec.DNSConfig = dnsConfig
@@ -173,17 +207,17 @@ func setDNSConfig(obj client.Object, dnsConfig *corev1.PodDNSConfig) error {
 	}
 }
 
-func getObjectFromKindString(kind string) (client.Object, error) {
+func GetObjectFromKindString(kind string) (client.Object, error) {
 	switch kind {
-	case deploymentStr:
+	case DeploymentStr:
 		return &appsv1.Deployment{}, nil
-	case statefulsetStr:
+	case StatefulsetStr:
 		return &appsv1.StatefulSet{}, nil
-	case daemonsetStr:
+	case DaemonsetStr:
 		return &appsv1.DaemonSet{}, nil
-	case replicasetStr:
+	case ReplicasetStr:
 		return &appsv1.ReplicaSet{}, nil
-	case podStr:
+	case PodStr:
 		return &corev1.Pod{}, nil
 	default:
 		return nil, errUnkownKind
@@ -241,10 +275,10 @@ func getDNSConfig(obj client.Object) *corev1.PodDNSConfig {
 	}
 }
 
-func isDNSConfigurable(obj client.Object) bool {
+func IsDNSConfigurable(obj client.Object) bool {
 	annotations := getAnnotations(obj)
 	if val, ok := annotations[DNSConfigurationDisabled]; ok {
-		if val == trueStr {
+		if val == TrueStr {
 			return true
 		}
 	}
@@ -252,13 +286,13 @@ func isDNSConfigurable(obj client.Object) bool {
 }
 
 // isDNSConfigured
-func isDNSConfigured(obj client.Object, dnsClass *corev1.PodDNSConfig) bool {
+func IsDNSConfigured(obj client.Object, dnsClass *corev1.PodDNSConfig) bool {
 	annotations := getAnnotations(obj)
 	dnsPolicy := getDNSPolicy(obj)
 	dnsConfig := getDNSConfig(obj)
 
 	if val, ok := annotations[DNSConfigured]; ok {
-		if val == trueStr {
+		if val == TrueStr {
 			// Check if the DNS configuration is altered
 			if dnsPolicy != corev1.DNSNone {
 				return false
@@ -274,7 +308,7 @@ func isDNSConfigured(obj client.Object, dnsClass *corev1.PodDNSConfig) bool {
 	return false
 }
 
-func removeAnnotation(obj client.Object, key string) error {
+func RemoveAnnotation(obj client.Object, key string) error {
 	switch o := obj.(type) {
 	case *appsv1.Deployment:
 		delete(o.Annotations, key)
@@ -296,7 +330,7 @@ func removeAnnotation(obj client.Object, key string) error {
 	}
 }
 
-func updateAnnotation(obj client.Object, key, value string) error {
+func UpdateAnnotation(obj client.Object, key, value string) error {
 	switch o := obj.(type) {
 	case *appsv1.Deployment:
 		if o.Annotations == nil {
@@ -333,50 +367,50 @@ func updateAnnotation(obj client.Object, key, value string) error {
 	}
 }
 
-type podPredicate struct {
+type PodPredicate struct {
 	predicate.Funcs
 }
 
-func (*podPredicate) Create(e event.CreateEvent) bool {
+func (*PodPredicate) Create(e event.CreateEvent) bool {
 	// On restarts, it receieves create events for running pods
 	// which is enabled to process the DNS configuration.
 	return true
 }
 
-func (*podPredicate) Update(e event.UpdateEvent) bool {
+func (*PodPredicate) Update(e event.UpdateEvent) bool {
 	// If resources updated, we need to check if DNS Configuration is changed.
 	return e.ObjectNew.GetGeneration() != e.ObjectOld.GetGeneration()
 }
 
-func (*podPredicate) Delete(e event.DeleteEvent) bool {
+func (*PodPredicate) Delete(e event.DeleteEvent) bool {
 	return false
 }
 
-func (*podPredicate) Generic(e event.GenericEvent) bool {
+func (*PodPredicate) Generic(e event.GenericEvent) bool {
 	return false
 }
 
-type dnsClassPredicate struct {
+type DnsClassPredicate struct {
 	predicate.Funcs
 }
 
-func (*dnsClassPredicate) Create(e event.CreateEvent) bool {
+func (*DnsClassPredicate) Create(e event.CreateEvent) bool {
 	annotations := e.Object.GetAnnotations()
 	if val, ok := annotations[IsReconciled]; ok {
-		return val == falseStr
+		return val == FalseStr
 	}
 	return true
 }
 
-func (*dnsClassPredicate) Update(e event.UpdateEvent) bool {
+func (*DnsClassPredicate) Update(e event.UpdateEvent) bool {
 	// If resources updated, we need to validate for DNS Configuration
 	return e.ObjectNew.GetGeneration() != e.ObjectOld.GetGeneration()
 }
 
-func (*dnsClassPredicate) Delete(e event.DeleteEvent) bool {
+func (*DnsClassPredicate) Delete(e event.DeleteEvent) bool {
 	return true
 }
 
-func (*dnsClassPredicate) Generic(e event.GenericEvent) bool {
+func (*DnsClassPredicate) Generic(e event.GenericEvent) bool {
 	return false
 }

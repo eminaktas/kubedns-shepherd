@@ -33,6 +33,8 @@ spec:
   dnsNames:
   - SERVICE_NAME.SERVICE_NAMESPACE.svc
   - SERVICE_NAME.SERVICE_NAMESPACE.svc.cluster.local
+  ipAddresses:
+  - 192.168.49.3
   issuerRef:
     kind: Issuer
     name: selfsigned-issuer

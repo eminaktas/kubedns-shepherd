@@ -27,3 +27,6 @@ go.work
 *.swp
 *.swo
 *~
+.devcontainer
+
+tmp

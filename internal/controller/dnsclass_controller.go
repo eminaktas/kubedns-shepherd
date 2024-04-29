@@ -27,7 +27,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -36,14 +35,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	configv1alpha1 "github.com/eminaktas/kubedns-shepherd/api/v1alpha1"
+	"github.com/eminaktas/kubedns-shepherd/internal/common"
 )
 
 // DNSClassReconciler reconciles a DNSClass object
 type DNSClassReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
 
-	DisablePodReconciling                        bool
+	EnablePodReconciling                         bool
+	EnableOnlyWebhookMutation                    bool
 	MaxConcurrentReconcilesForDNSClassReconciler int
 }
 
@@ -75,14 +75,14 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if annotations == nil {
 		annotations = make(map[string]string)
 	}
-	if val, ok := annotations[IsReconciled]; !ok || val == "true" {
-		annotations[IsReconciled] = "false"
+	if val, ok := annotations[common.IsReconciled]; !ok || val == "true" {
+		annotations[common.IsReconciled] = "false"
 		dnsClass.SetAnnotations(annotations)
 		if err := r.Update(ctx, dnsClass); err != nil {
 			logger.Error(err, "Failed to add annotations")
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{Requeue: true, RequeueAfter: ReconcilePeriod}, nil
+		return ctrl.Result{Requeue: true, RequeueAfter: common.ReconcilePeriod}, nil
 	}
 
 	// Add default nameservers if not defined in object
@@ -96,21 +96,21 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			logger.Error(err, "Failed to add nameservers")
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{Requeue: true, RequeueAfter: ReconcilePeriod}, nil
+		return ctrl.Result{Requeue: true, RequeueAfter: common.ReconcilePeriod}, nil
 	}
 
 	// Set the status as Unknown when no status are available
 	if dnsClass.Status.Conditions == nil || len(dnsClass.Status.Conditions) == 0 {
-		meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: TypeAvailable, Status: metav1.ConditionUnknown, Reason: "Reconciling", Message: "Starting reconciliation"})
+		meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: common.TypeAvailable, Status: metav1.ConditionUnknown, Reason: "Reconciling", Message: "Starting reconciliation"})
 		if err = r.Status().Update(ctx, dnsClass); err != nil {
 			logger.Error(err, "Failed to update the status")
 			return ctrl.Result{}, err
 		}
 	}
 
-	if !controllerutil.ContainsFinalizer(dnsClass, FinalizerString) {
+	if !controllerutil.ContainsFinalizer(dnsClass, common.FinalizerString) {
 		logger.Info("Adding Finalizer")
-		if ok := controllerutil.AddFinalizer(dnsClass, FinalizerString); !ok {
+		if ok := controllerutil.AddFinalizer(dnsClass, common.FinalizerString); !ok {
 			logger.Error(err, "Failed to add finalizer")
 			return ctrl.Result{Requeue: true}, nil
 		}
@@ -120,16 +120,16 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return ctrl.Result{}, err
 		}
 
-		return ctrl.Result{Requeue: true, RequeueAfter: ReconcilePeriod}, nil
+		return ctrl.Result{Requeue: true, RequeueAfter: common.ReconcilePeriod}, nil
 	}
 
 	if !dnsClass.DeletionTimestamp.IsZero() {
-		if controllerutil.ContainsFinalizer(dnsClass, FinalizerString) {
+		if controllerutil.ContainsFinalizer(dnsClass, common.FinalizerString) {
 			logger.Info("Performing Finalizer Operations before deleting DNSClass")
 
 			// Add "Downgrade" status
-			if !meta.IsStatusConditionPresentAndEqual(dnsClass.Status.Conditions, TypeDegraded, metav1.ConditionUnknown) {
-				meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: TypeDegraded,
+			if !meta.IsStatusConditionPresentAndEqual(dnsClass.Status.Conditions, common.TypeDegraded, metav1.ConditionUnknown) {
+				meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: common.TypeDegraded,
 					Status: metav1.ConditionUnknown, Reason: "Finalizing",
 					Message: fmt.Sprintf("Performing finalizer operations for the custom resource: %s", dnsClass.Name)})
 
@@ -137,17 +137,19 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 					logger.Error(err, "Failed to update status")
 					return ctrl.Result{}, err
 				}
-				return ctrl.Result{Requeue: true, RequeueAfter: ReconcilePeriod}, nil
+				return ctrl.Result{Requeue: true, RequeueAfter: common.ReconcilePeriod}, nil
 			}
 
 			// Reverts the DNS Configuration
-			err := r.setDNSConfig(ctx, dnsClass, true)
-			if err != nil {
-				logger.Error(err, "Failed to revert the DNS Configuration")
-				return ctrl.Result{}, err
+			if !r.EnableOnlyWebhookMutation {
+				err := r.setDNSConfig(ctx, dnsClass, true)
+				if err != nil {
+					logger.Error(err, "Failed to revert the DNS Configuration")
+					return ctrl.Result{}, err
+				}
 			}
 
-			meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: TypeDegraded,
+			meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: common.TypeDegraded,
 				Status: metav1.ConditionTrue, Reason: "Finalizing",
 				Message: "Finalizer operations were successfully accomplished"})
 
@@ -157,7 +159,7 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			}
 
 			logger.Info("Removing Finalizer after successfully perform the operations")
-			if ok := controllerutil.RemoveFinalizer(dnsClass, FinalizerString); !ok {
+			if ok := controllerutil.RemoveFinalizer(dnsClass, common.FinalizerString); !ok {
 				logger.Error(err, "Failed to remove finalizer")
 				return ctrl.Result{Requeue: true}, nil
 			}
@@ -170,13 +172,15 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
-	err = r.setDNSConfig(ctx, dnsClass, false)
-	if err != nil {
-		return ctrl.Result{}, err
+	if !r.EnableOnlyWebhookMutation {
+		err = r.setDNSConfig(ctx, dnsClass, false)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	// Marks the resource is already reconciled with `kubedns-shepherd.io/is-reconciled=true` annotation
-	annotations[IsReconciled] = "true"
+	annotations[common.IsReconciled] = "true"
 	dnsClass.SetAnnotations(annotations)
 
 	if err := r.Update(ctx, dnsClass); err != nil {
@@ -185,7 +189,7 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// The following implementation will update the status
-	meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: TypeAvailable,
+	meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: common.TypeAvailable,
 		Status: metav1.ConditionTrue, Reason: "Reconciling",
 		Message: "DNSClass were created and Workloads DNS configurations were updated"})
 
@@ -220,7 +224,7 @@ func (r *DNSClassReconciler) setDNSConfig(ctx context.Context, dnsClass *configv
 		}
 
 		for _, pod := range pods.Items {
-			podWorkload, err := getWorkloadObject(ctx, r.Client, &pod)
+			podWorkload, err := common.GetWorkloadObject(ctx, r.Client, &pod)
 			if err != nil {
 				if err.Error() == "unknown owner kind" {
 					continue
@@ -228,13 +232,13 @@ func (r *DNSClassReconciler) setDNSConfig(ctx context.Context, dnsClass *configv
 				return err
 			}
 
-			if r.DisablePodReconciling {
-				if podWorkload.Kind == podStr {
+			if !r.EnablePodReconciling {
+				if podWorkload.Kind == common.PodStr {
 					continue
 				}
 			}
 
-			object, err := getObjectFromKindString(podWorkload.Kind)
+			object, err := common.GetObjectFromKindString(podWorkload.Kind)
 			if err != nil {
 				return err
 			}
@@ -256,46 +260,46 @@ func (r *DNSClassReconciler) configureDNSForWorkload(ctx context.Context, object
 	var err error
 
 	if revert {
-		if err = setDNSConfig(object, &corev1.PodDNSConfig{}); err != nil {
+		if err = common.SetDNSConfig(object, &corev1.PodDNSConfig{}); err != nil {
 			return err
 		}
 
-		if err = setDNSPolicyTo(object, corev1.DNSPolicy(dnsClass.Spec.ResetDNSPolicyTo)); err != nil {
+		if err = common.SetDNSPolicyTo(object, corev1.DNSPolicy(dnsClass.Spec.ResetDNSPolicyTo)); err != nil {
 			return err
 		}
 
-		if err = removeAnnotation(object, DNSConfigured); err != nil {
+		if err = common.RemoveAnnotation(object, common.DNSConfigured); err != nil {
 			return err
 		}
 
-		if err = removeAnnotation(object, DNSClassName); err != nil {
+		if err = common.RemoveAnnotation(object, common.DNSClassName); err != nil {
 			return err
 		}
 	} else {
-		if err = setDNSConfig(object, dnsClass.Spec.DNSConfig); err != nil {
+		if err = common.SetDNSConfig(object, dnsClass.Spec.DNSConfig); err != nil {
 			return err
 		}
 
-		if err = setDNSPolicyTo(object, corev1.DNSNone); err != nil {
+		if err = common.SetDNSPolicyTo(object, corev1.DNSNone); err != nil {
 			return err
 		}
 
-		if err = updateAnnotation(object, DNSConfigured, trueStr); err != nil {
+		if err = common.UpdateAnnotation(object, common.DNSConfigured, common.TrueStr); err != nil {
 			return err
 		}
 
-		if err = updateAnnotation(object, DNSClassName, dnsClass.Name); err != nil {
+		if err = common.UpdateAnnotation(object, common.DNSClassName, dnsClass.Name); err != nil {
 			return err
 		}
 	}
 
 	// Due to the restriction of pod update, we need to delete and recreate the object
-	if object.GetObjectKind().GroupVersionKind().Kind == podStr {
+	if object.GetObjectKind().GroupVersionKind().Kind == common.PodStr {
 		if err = r.Delete(ctx, object); err != nil {
 			return err
 		}
 		// Wait until pod is deleted
-		if err := waitForPodDeletion(ctx, r.Client, types.NamespacedName{
+		if err := common.WaitForPodDeletion(ctx, r.Client, types.NamespacedName{
 			Name:      object.GetName(),
 			Namespace: object.GetNamespace(),
 		}); err != nil {
@@ -367,7 +371,7 @@ func (r *DNSClassReconciler) getNameservers(ctx context.Context) ([]string, erro
 func (r *DNSClassReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&configv1alpha1.DNSClass{}).
-		WithEventFilter(&dnsClassPredicate{}).
+		WithEventFilter(&common.DnsClassPredicate{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: r.MaxConcurrentReconcilesForDNSClassReconciler}).
 		Complete(r)
 }

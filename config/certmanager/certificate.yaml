@@ -33,6 +33,7 @@ spec:
   dnsNames:
   - SERVICE_NAME.SERVICE_NAMESPACE.svc
   - SERVICE_NAME.SERVICE_NAMESPACE.svc.cluster.local
+  # Add an accessible ip for your env during development
   ipAddresses:
   - 192.168.49.3
   issuerRef:

@@ -18,7 +18,6 @@ package main
 
 import (
 	"crypto/tls"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -54,8 +53,6 @@ var (
 	treeState = ""
 	date      = ""
 	builtBy   = ""
-
-	errForbiddenUsage = errors.New("forbidden usage")
 )
 
 func init() {
@@ -86,8 +83,9 @@ func main() {
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	flag.BoolVar(&disablePodReconciling, "disable-pod-reconciling", false,
-		"If set, this flag disables dynamic DNS configuration for pods. This feature is enabled by default, any changes to DNSClass configuration "+
-			"or the addition of a new DNSClass will trigger a restart of all pods affected by these changes to apply the new DNS configuration.")
+		"If set, this flag disables dynamic DNS configuration for pods. This feature is not disabled by default. "+
+			"any changes to DNSClass configuration or the addition of a new DNSClass will trigger a restart of "+
+			"all pods affected by these changes to apply the new DNS configuration.")
 	flag.IntVar(&maxConcurrentReconcilesForPodsReconciler, "max-concurrent-reconciles-for-pods-reconciler", 4,
 		"Specifies the maximum number of concurrent reconciles for the Pods reconciler.")
 	flag.IntVar(&maxConcurrentReconcilesForDNSClassReconciler, "max-concurrent-reconciles-for-dnsclass-reconciler", 2,

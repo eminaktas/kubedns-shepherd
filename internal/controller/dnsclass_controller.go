@@ -114,72 +114,71 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 
-	// Manage finalizers
-	if !controllerutil.ContainsFinalizer(dnsClass, common.FinalizerString) {
-		logger.Info("Adding Finalizer")
-		if ok := controllerutil.AddFinalizer(dnsClass, common.FinalizerString); !ok {
-			logger.Error(err, "Failed to add finalizer to DNSClass")
-			return ctrl.Result{Requeue: true}, nil
+	if dnsClass.Spec.EnablePodRestart {
+		// Manage finalizers
+		if !controllerutil.ContainsFinalizer(dnsClass, common.FinalizerString) {
+			logger.Info("Adding Finalizer")
+			if ok := controllerutil.AddFinalizer(dnsClass, common.FinalizerString); !ok {
+				logger.Error(err, "Failed to add finalizer to DNSClass")
+				return ctrl.Result{Requeue: true}, nil
+			}
+
+			if err = r.Update(ctx, dnsClass); err != nil {
+				logger.Error(err, "Failed to update DNSClass to add finalizer")
+				return ctrl.Result{}, err
+			}
+
+			return ctrl.Result{Requeue: true, RequeueAfter: common.ReconcilePeriod}, nil
 		}
 
-		if err = r.Update(ctx, dnsClass); err != nil {
-			logger.Error(err, "Failed to update DNSClass to add finalizer")
-			return ctrl.Result{}, err
-		}
+		// Perform finalizer operations before deletion
+		if !dnsClass.DeletionTimestamp.IsZero() {
+			if controllerutil.ContainsFinalizer(dnsClass, common.FinalizerString) {
+				logger.Info("Performing Finalizer Operations before deleting DNSClass")
 
-		return ctrl.Result{Requeue: true, RequeueAfter: common.ReconcilePeriod}, nil
-	}
+				// Add "Downgrade" status
+				if !meta.IsStatusConditionPresentAndEqual(dnsClass.Status.Conditions, common.TypeDegraded, metav1.ConditionUnknown) {
+					meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: common.TypeDegraded,
+						Status: metav1.ConditionUnknown, Reason: "Finalizing",
+						Message: "Performing finalizer operations for DNSClass"})
 
-	// Perform finalizer operations before deletion
-	if !dnsClass.DeletionTimestamp.IsZero() {
-		if controllerutil.ContainsFinalizer(dnsClass, common.FinalizerString) {
-			logger.Info("Performing Finalizer Operations before deleting DNSClass")
+					if err := r.Status().Update(ctx, dnsClass); err != nil {
+						logger.Error(err, "Failed to update DNSClass to add the status")
+						return ctrl.Result{}, err
+					}
+					return ctrl.Result{Requeue: true, RequeueAfter: common.ReconcilePeriod}, nil
+				}
 
-			// Add "Downgrade" status
-			if !meta.IsStatusConditionPresentAndEqual(dnsClass.Status.Conditions, common.TypeDegraded, metav1.ConditionUnknown) {
+				// Revert the DNS Configuration
+				err := r.triggerRestart(ctx, dnsClass)
+				if err != nil {
+					logger.Error(err, "Failed to restart pods to revert the DNS Configuration for matching workloads")
+					return ctrl.Result{}, err
+				}
+
 				meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: common.TypeDegraded,
-					Status: metav1.ConditionUnknown, Reason: "Finalizing",
-					Message: "Performing finalizer operations for DNSClass"})
+					Status: metav1.ConditionTrue, Reason: "Finalizing",
+					Message: "Finalizer operations were successfully accomplished"})
 
 				if err := r.Status().Update(ctx, dnsClass); err != nil {
 					logger.Error(err, "Failed to update DNSClass to add the status")
 					return ctrl.Result{}, err
 				}
-				return ctrl.Result{Requeue: true, RequeueAfter: common.ReconcilePeriod}, nil
-			}
 
-			if !dnsClass.Spec.DisablePodRestart {
-				// Revert the DNS Configuration
-				err := r.triggerRestart(ctx, dnsClass)
-				if err != nil {
-					logger.Error(err, "Failed to revert the DNS Configuration for matching workloads")
+				logger.Info("Removing Finalizer after successfully perform the operations")
+				if ok := controllerutil.RemoveFinalizer(dnsClass, common.FinalizerString); !ok {
+					logger.Error(err, "Failed to remove finalizer from DNSClass")
+					return ctrl.Result{Requeue: true}, nil
+				}
+
+				if err := r.Update(ctx, dnsClass); err != nil {
+					logger.Error(err, "Failed to update DNSClass to remove finalizer")
 					return ctrl.Result{}, err
 				}
 			}
-
-			meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: common.TypeDegraded,
-				Status: metav1.ConditionTrue, Reason: "Finalizing",
-				Message: "Finalizer operations were successfully accomplished"})
-
-			if err := r.Status().Update(ctx, dnsClass); err != nil {
-				logger.Error(err, "Failed to update DNSClass to add the status")
-				return ctrl.Result{}, err
-			}
-
-			logger.Info("Removing Finalizer after successfully perform the operations")
-			if ok := controllerutil.RemoveFinalizer(dnsClass, common.FinalizerString); !ok {
-				logger.Error(err, "Failed to remove finalizer from DNSClass")
-				return ctrl.Result{Requeue: true}, nil
-			}
-
-			if err := r.Update(ctx, dnsClass); err != nil {
-				logger.Error(err, "Failed to update DNSClass to remove finalizer")
-				return ctrl.Result{}, err
-			}
+			return ctrl.Result{}, nil
 		}
-		return ctrl.Result{}, nil
 	}
-
 	// Mark the resource as reconciled
 	annotations[common.IsReconciled] = "true"
 	dnsClass.SetAnnotations(annotations)
@@ -189,10 +188,11 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	// Restart workloads
-	if !dnsClass.Spec.DisablePodRestart {
+	if dnsClass.Spec.EnablePodRestart {
+		// Restart workloads
 		err = r.triggerRestart(ctx, dnsClass)
 		if err != nil {
+			logger.Error(err, "Failed to restart pods to apply the DNS Configuration for matching workloads")
 			return ctrl.Result{}, err
 		}
 	}

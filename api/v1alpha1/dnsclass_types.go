@@ -26,7 +26,7 @@ type DNSClassSpec struct {
 	AllowedNamespaces  []string             `json:"allowedNamespaces,omitempty"`
 	DisabledNamespaces []string             `json:"disabledNamespaces,omitempty"`
 	AllowedDNSPolicies []corev1.DNSPolicy   `json:"allowedDNSPolicies,omitempty"`
-	DisablePodRestart  bool                 `json:"disablePodRestart,omitempty"`
+	EnablePodRestart   bool                 `json:"enablePodRestart,omitempty"`
 	DNSPolicy          corev1.DNSPolicy     `json:"dnsPolicy,omitempty"`
 	DNSConfig          *corev1.PodDNSConfig `json:"dnsConfig,omitempty"`
 }

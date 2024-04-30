@@ -57,8 +57,6 @@ spec:
                 items:
                   type: string
                 type: array
-              disablePodRestart:
-                type: boolean
               disabledNamespaces:
                 items:
                   type: string
@@ -105,6 +103,8 @@ spec:
               dnsPolicy:
                 description: DNSPolicy defines how a pod's DNS will be configured.
                 type: string
+              enablePodRestart:
+                type: boolean
             type: object
           status:
             description: DNSClassStatus defines the observed state of DNSClass

@@ -297,6 +297,11 @@ func (*DnsClassPredicate) Update(e event.UpdateEvent) bool {
 
 // Delete always returns true for DNSClass deletion events
 func (*DnsClassPredicate) Delete(e event.DeleteEvent) bool {
+	if dnsClass, ok := e.Object.(*configv1alpha1.DNSClass); ok {
+		if !dnsClass.Spec.EnablePodRestart {
+			return false
+		}
+	}
 	return true
 }
 

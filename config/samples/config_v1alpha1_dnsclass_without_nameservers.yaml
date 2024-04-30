@@ -11,7 +11,10 @@ metadata:
 spec:
   allowedNamespaces:
     - default
-  disablePodRestart: true
+  # If set, any changes to DNSClass configuration or the addition of a new DNSClass
+  # will trigger a restart for all matched pods to apply the new DNS configuration.
+  # This feature is disabled by default.
+  enablePodRestart: true
   dnsConfig:
     searches:
       - svc.cluster.local

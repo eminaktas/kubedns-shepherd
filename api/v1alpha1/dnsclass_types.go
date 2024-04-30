@@ -23,9 +23,8 @@ import (
 
 // DNSClassSpec defines the desired state of DNSClass
 type DNSClassSpec struct {
-	ResetDNSPolicyTo string               `json:"resetDNSPolicyTo,omitempty"`
-	Namespaces       []string             `json:"namespaces,omitempty"`
-	DNSConfig        *corev1.PodDNSConfig `json:"dnsConfig,omitempty"`
+	Namespaces []string             `json:"namespaces,omitempty"`
+	DNSConfig  *corev1.PodDNSConfig `json:"dnsConfig,omitempty"`
 }
 
 // DNSClassStatus defines the observed state of DNSClass
@@ -37,7 +36,7 @@ type DNSClassStatus struct {
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
 //+kubebuilder:resource:scope=Cluster,shortName="dc"
-//+kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.conditions[*].type"
+//+kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[*].status"
 //+kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // DNSClass is the Schema for the dnsclasses API

@@ -72,9 +72,7 @@ func main() {
 	var probeAddr string
 	var secureMetrics bool
 	var enableHTTP2 bool
-	var enableOnlyWebhookMutation bool
-	var enablePodMutation bool
-	var enablePodReconciling bool
+	var disablePodReconciling bool
 	var maxConcurrentReconcilesForPodsReconciler int
 	var maxConcurrentReconcilesForDNSClassReconciler int
 	flag.BoolVar(&printVersion, "version", false, "Prints the version")
@@ -87,15 +85,9 @@ func main() {
 		"If set the metrics endpoint is served securely")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
-	flag.BoolVar(&enableOnlyWebhookMutation, "enable-only-webhook-mutation", false,
-		"If set, disables dynamic DNS configuration for all workloads.")
-	flag.BoolVar(&enablePodMutation, "enable-pod-mutation", true,
-		"If set, enables DNS configuration for pod workloads. "+
-			"This configuration cannot be used with `-disable-pod-reconciling` flag.")
-	flag.BoolVar(&enablePodReconciling, "enable-pod-reconciling", false,
-		"If set, enables dynamic DNS configuration for pods without owner references. "+
-			"This prevents potential data loss if the controller restarts or is removed "+
-			"while working on a pod object, due to limitations in updating pod resources.")
+	flag.BoolVar(&disablePodReconciling, "disable-pod-reconciling", false,
+		"If set, this flag disables dynamic DNS configuration for pods. This feature is enabled by default, any changes to DNSClass configuration "+
+			"or the addition of a new DNSClass will trigger a restart of all pods affected by these changes to apply the new DNS configuration.")
 	flag.IntVar(&maxConcurrentReconcilesForPodsReconciler, "max-concurrent-reconciles-for-pods-reconciler", 4,
 		"Specifies the maximum number of concurrent reconciles for the Pods reconciler.")
 	flag.IntVar(&maxConcurrentReconcilesForDNSClassReconciler, "max-concurrent-reconciles-for-dnsclass-reconciler", 2,
@@ -112,12 +104,6 @@ func main() {
 		buildVersion := buildVersion()
 		fmt.Println(buildVersion.String())
 		os.Exit(0)
-	}
-
-	if enablePodMutation && enablePodReconciling {
-		setupLog.Error(errForbiddenUsage, "`-enable-pod-mutation` and `-disable-pod-reconciling` is not allowed to be used at the same time.")
-		flag.Usage()
-		os.Exit(1)
 	}
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
@@ -140,10 +126,13 @@ func main() {
 		// TLSOpts: tlsOpts,
 	})
 
-	if !enablePodReconciling {
+	if !disablePodReconciling {
 		setupLog.Info(
-			"Dynamic DNS configuration is disabled for only pods without owner references. " +
-				"To enable it, use this flag -enable-pod-reconciling. Please be cautious enabling this.",
+			"Dynamic DNS configuration is enabled. Use -disable-pod-reconciling to disable it.",
+		)
+	} else {
+		setupLog.Info(
+			"Dynamic DNS configuration is disabled",
 		)
 	}
 
@@ -175,47 +164,24 @@ func main() {
 		os.Exit(1)
 	}
 	if err = (&controller.DNSClassReconciler{
-		Client:               mgr.GetClient(),
-		EnablePodReconciling: enablePodReconciling,
+		Client: mgr.GetClient(),
 		MaxConcurrentReconcilesForDNSClassReconciler: maxConcurrentReconcilesForDNSClassReconciler,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DNSClass")
 		os.Exit(1)
 	}
-	if !enableOnlyWebhookMutation {
-		if err = (&controller.PodsReconciler{
-			Client:                                   mgr.GetClient(),
-			EnablePodReconciling:                     enablePodReconciling,
-			MaxConcurrentReconcilesForPodsReconciler: maxConcurrentReconcilesForPodsReconciler,
-		}).SetupWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create controller", "controller", "Pods")
-			os.Exit(1)
-		}
-	} else {
-		setupLog.Info("Dynamic DNS configuration is disabled", "controller", "Pods")
-	}
-	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
-		if err = (&configv1alpha1.DNSClass{}).SetupWebhookWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create webhook", "webhook", "DNSClass")
-			os.Exit(1)
-		}
 
-		if enablePodMutation || enableOnlyWebhookMutation {
-			mgr.GetWebhookServer().Register("/mutate-v1-pod", &webhook.Admission{
-				Handler: &webhook_controller.PodMutator{
-					Client:  mgr.GetClient(),
-					Decoder: admission.NewDecoder(mgr.GetScheme()),
-				},
-			})
-			// if err = (&webhook_controller.PodMutator{
-			// 	Client:  mgr.GetClient(),
-			// 	Decoder: admission.NewDecoder(mgr.GetScheme()),
-			// }).SetupWebhookWithManager(mgr); err != nil {
-			// 	setupLog.Error(err, "unable to create webhook", "webhook", "Pod")
-			// 	os.Exit(1)
-			// }
-		}
+	if err = (&configv1alpha1.DNSClass{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "DNSClass")
+		os.Exit(1)
 	}
+
+	mgr.GetWebhookServer().Register("/mutate-v1-pod", &webhook.Admission{
+		Handler: &webhook_controller.PodMutator{
+			Client:  mgr.GetClient(),
+			Decoder: admission.NewDecoder(mgr.GetScheme()),
+		},
+	})
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

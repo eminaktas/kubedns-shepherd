@@ -38,7 +38,7 @@ webhooks:
 - admissionReviewVersions:
   - v1
   clientConfig:
-    # Please add an ip that reachable from the cluster
+    # Add an accessible ip for your env during development
     url: "https://192.168.49.3:9443/mutate-config-kubedns-shepherd-io-v1alpha1-dnsclass"
     service:
       $patch: delete
@@ -46,7 +46,7 @@ webhooks:
 - admissionReviewVersions:
   - v1
   clientConfig:
-    # Please add an ip that reachable from the cluster
+    # Add an accessible ip for your env during development
     url: "https://192.168.49.3:9443/mutate-v1-pod"
     service:
       $patch: delete
@@ -67,7 +67,7 @@ webhooks:
 - admissionReviewVersions:
   - v1
   clientConfig:
-    # Please add an ip that reachable from the cluster
+    # Add an accessible ip for your env during development
     url: "https://192.168.49.3:9443/validate-config-kubedns-shepherd-io-v1alpha1-dnsclass"
     service:
       $patch: delete

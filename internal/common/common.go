@@ -19,16 +19,16 @@ package common
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	configv1alpha1 "github.com/eminaktas/kubedns-shepherd/api/v1alpha1"
@@ -46,19 +46,15 @@ const (
 	FinalizerString = "config.kubedns-shepherd.io/finalizer"
 
 	// Annotation keys
-	DNSConfigurationDisabled = "kubedns-shepherd.io/dns-configuration-disabled"
-	DNSConfigured            = "kubedns-shepherd.io/dns-configured"
-	DNSClassName             = "kubedns-shepherd.io/dns-class-name"
-	IsReconciled             = "kubedns-shepherd.io/is-reconciled"
+	DNSClassName = "kubedns-shepherd.io/dns-class-name"
+	IsReconciled = "kubedns-shepherd.io/is-reconciled"
+	RestartedAt  = "kubedns-shepherd.io/restartedAt"
 
 	DeploymentStr  = "Deployment"
 	DaemonsetStr   = "DaemonSet"
 	StatefulsetStr = "StatefulSet"
 	ReplicasetStr  = "ReplicaSet"
 	PodStr         = "Pod"
-
-	TrueStr  = "false"
-	FalseStr = "false"
 )
 
 var (
@@ -93,30 +89,50 @@ func GetDNSClass(ctx context.Context, c client.Client, podNamespace string) (con
 	if reflect.DeepEqual(dnsClass, configv1alpha1.DNSClass{}) {
 		return configv1alpha1.DNSClass{}, errors.New("no dnsclass found")
 	}
-
 	return dnsClass, nil
 }
 
-// Define a function to wait for a Pod to be deleted
-func WaitForPodDeletion(ctx context.Context, c client.Client, podName types.NamespacedName) error {
-	for {
-		// Check if the Pod still exists
-		pod := &corev1.Pod{}
-		err := c.Get(ctx, podName, pod)
-		if err != nil && apierrors.IsNotFound(err) {
-			// Pod has been deleted
-			return nil
-		} else if err != nil {
-			// Error occurred while checking for Pod
-			return err
+func ListWorkloadObjects(ctx context.Context, c client.Client, namespaces []string) ([]*Workload, error) {
+	logger := log.FromContext(ctx)
+
+	var (
+		pods      corev1.PodList
+		opts      []client.ListOption
+		workloads []*Workload
+		seen      map[string]struct{} = make(map[string]struct{})
+	)
+
+	for _, namespace := range namespaces {
+		if namespace == "all" {
+			opts = nil
+		} else {
+			opts = []client.ListOption{
+				client.InNamespace(namespace),
+			}
 		}
 
-		// Pod still exists, wait for a short duration before checking again
-		time.Sleep(ReconcilePeriod)
+		err := c.List(ctx, &pods, opts...)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, pod := range pods.Items {
+			workload, err := getOwnerObject(ctx, c, &pod)
+			if err != nil {
+				logger.Info(fmt.Sprintf("Failed to get owner object for %s/%s. Skipping update for this resource.", pod.Namespace, pod.Name), "error", err)
+				continue
+			}
+			key := fmt.Sprintf("%s-%s-%s", workload.Kind, workload.Namespace, workload.Name)
+			if _, ok := seen[key]; !ok {
+				seen[key] = struct{}{}
+				workloads = append(workloads, workload)
+			}
+		}
 	}
+	return workloads, nil
 }
 
-func GetWorkloadObject(ctx context.Context, c client.Client, pod *corev1.Pod) (*Workload, error) {
+func getOwnerObject(ctx context.Context, c client.Client, pod *corev1.Pod) (*Workload, error) {
 	for _, owner := range pod.OwnerReferences {
 		if owner.Kind == ReplicasetStr {
 			var rs appsv1.ReplicaSet
@@ -163,50 +179,6 @@ func GetWorkloadObject(ctx context.Context, c client.Client, pod *corev1.Pod) (*
 	}, nil
 }
 
-func SetDNSPolicyTo(obj client.Object, dnsPolicy corev1.DNSPolicy) error {
-	switch o := obj.(type) {
-	case *appsv1.Deployment:
-		o.Spec.Template.Spec.DNSPolicy = dnsPolicy
-		return nil
-	case *appsv1.StatefulSet:
-		o.Spec.Template.Spec.DNSPolicy = dnsPolicy
-		return nil
-	case *appsv1.DaemonSet:
-		o.Spec.Template.Spec.DNSPolicy = dnsPolicy
-		return nil
-	case *appsv1.ReplicaSet:
-		o.Spec.Template.Spec.DNSPolicy = dnsPolicy
-		return nil
-	case *corev1.Pod:
-		o.Spec.DNSPolicy = dnsPolicy
-		return nil
-	default:
-		return errUnkownKind
-	}
-}
-
-func SetDNSConfig(obj client.Object, dnsConfig *corev1.PodDNSConfig) error {
-	switch o := obj.(type) {
-	case *appsv1.Deployment:
-		o.Spec.Template.Spec.DNSConfig = dnsConfig
-		return nil
-	case *appsv1.StatefulSet:
-		o.Spec.Template.Spec.DNSConfig = dnsConfig
-		return nil
-	case *appsv1.DaemonSet:
-		o.Spec.Template.Spec.DNSConfig = dnsConfig
-		return nil
-	case *appsv1.ReplicaSet:
-		o.Spec.Template.Spec.DNSConfig = dnsConfig
-		return nil
-	case *corev1.Pod:
-		o.Spec.DNSConfig = dnsConfig
-		return nil
-	default:
-		return errUnkownKind
-	}
-}
-
 func GetObjectFromKindString(kind string) (client.Object, error) {
 	switch kind {
 	case DeploymentStr:
@@ -224,103 +196,19 @@ func GetObjectFromKindString(kind string) (client.Object, error) {
 	}
 }
 
-func getAnnotations(obj client.Object) map[string]string {
-	switch o := obj.(type) {
-	case *appsv1.Deployment:
-		return o.Annotations
-	case *appsv1.StatefulSet:
-		return o.Annotations
-	case *appsv1.DaemonSet:
-		return o.Annotations
-	case *appsv1.ReplicaSet:
-		return o.Annotations
-	case *corev1.Pod:
-		return o.Annotations
-	default:
-		return nil
-	}
-}
-
-func getDNSPolicy(obj client.Object) corev1.DNSPolicy {
-	switch o := obj.(type) {
-	case *appsv1.Deployment:
-		return o.Spec.Template.Spec.DNSPolicy
-	case *appsv1.StatefulSet:
-		return o.Spec.Template.Spec.DNSPolicy
-	case *appsv1.DaemonSet:
-		return o.Spec.Template.Spec.DNSPolicy
-	case *appsv1.ReplicaSet:
-		return o.Spec.Template.Spec.DNSPolicy
-	case *corev1.Pod:
-		return o.Spec.DNSPolicy
-	default:
-		return ""
-	}
-}
-
-func getDNSConfig(obj client.Object) *corev1.PodDNSConfig {
-	switch o := obj.(type) {
-	case *appsv1.Deployment:
-		return o.Spec.Template.Spec.DNSConfig
-	case *appsv1.StatefulSet:
-		return o.Spec.Template.Spec.DNSConfig
-	case *appsv1.DaemonSet:
-		return o.Spec.Template.Spec.DNSConfig
-	case *appsv1.ReplicaSet:
-		return o.Spec.Template.Spec.DNSConfig
-	case *corev1.Pod:
-		return o.Spec.DNSConfig
-	default:
-		return nil
-	}
-}
-
-func IsDNSConfigurable(obj client.Object) bool {
-	annotations := getAnnotations(obj)
-	if val, ok := annotations[DNSConfigurationDisabled]; ok {
-		if val == TrueStr {
-			return true
-		}
-	}
-	return false
-}
-
-// isDNSConfigured
-func IsDNSConfigured(obj client.Object, dnsClass *corev1.PodDNSConfig) bool {
-	annotations := getAnnotations(obj)
-	dnsPolicy := getDNSPolicy(obj)
-	dnsConfig := getDNSConfig(obj)
-
-	if val, ok := annotations[DNSConfigured]; ok {
-		if val == TrueStr {
-			// Check if the DNS configuration is altered
-			if dnsPolicy != corev1.DNSNone {
-				return false
-			}
-			if dnsConfig == nil {
-				return false
-			}
-			if result := reflect.DeepEqual(dnsConfig, dnsClass); result {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 func RemoveAnnotation(obj client.Object, key string) error {
 	switch o := obj.(type) {
 	case *appsv1.Deployment:
-		delete(o.Annotations, key)
+		delete(o.Spec.Template.Annotations, key)
 		return nil
 	case *appsv1.StatefulSet:
-		delete(o.Annotations, key)
+		delete(o.Spec.Template.Annotations, key)
 		return nil
 	case *appsv1.DaemonSet:
-		delete(o.Annotations, key)
+		delete(o.Spec.Template.Annotations, key)
 		return nil
 	case *appsv1.ReplicaSet:
-		delete(o.Annotations, key)
+		delete(o.Spec.Template.Annotations, key)
 		return nil
 	case *corev1.Pod:
 		delete(o.Annotations, key)
@@ -333,28 +221,28 @@ func RemoveAnnotation(obj client.Object, key string) error {
 func UpdateAnnotation(obj client.Object, key, value string) error {
 	switch o := obj.(type) {
 	case *appsv1.Deployment:
-		if o.Annotations == nil {
-			o.Annotations = make(map[string]string)
+		if o.Spec.Template.Annotations == nil {
+			o.Spec.Template.Annotations = make(map[string]string)
 		}
-		o.Annotations[key] = value
+		o.Spec.Template.Annotations[key] = value
 		return nil
 	case *appsv1.StatefulSet:
-		if o.Annotations == nil {
-			o.Annotations = make(map[string]string)
+		if o.Spec.Template.Annotations == nil {
+			o.Spec.Template.Annotations = make(map[string]string)
 		}
-		o.Annotations[key] = value
+		o.Spec.Template.Annotations[key] = value
 		return nil
 	case *appsv1.DaemonSet:
-		if o.Annotations == nil {
-			o.Annotations = make(map[string]string)
+		if o.Spec.Template.Annotations == nil {
+			o.Spec.Template.Annotations = make(map[string]string)
 		}
-		o.Annotations[key] = value
+		o.Spec.Template.Annotations[key] = value
 		return nil
 	case *appsv1.ReplicaSet:
-		if o.Annotations == nil {
-			o.Annotations = make(map[string]string)
+		if o.Spec.Template.Annotations == nil {
+			o.Spec.Template.Annotations = make(map[string]string)
 		}
-		o.Annotations[key] = value
+		o.Spec.Template.Annotations[key] = value
 		return nil
 	case *corev1.Pod:
 		if o.Annotations == nil {
@@ -367,29 +255,6 @@ func UpdateAnnotation(obj client.Object, key, value string) error {
 	}
 }
 
-type PodPredicate struct {
-	predicate.Funcs
-}
-
-func (*PodPredicate) Create(e event.CreateEvent) bool {
-	// On restarts, it receieves create events for running pods
-	// which is enabled to process the DNS configuration.
-	return true
-}
-
-func (*PodPredicate) Update(e event.UpdateEvent) bool {
-	// If resources updated, we need to check if DNS Configuration is changed.
-	return e.ObjectNew.GetGeneration() != e.ObjectOld.GetGeneration()
-}
-
-func (*PodPredicate) Delete(e event.DeleteEvent) bool {
-	return false
-}
-
-func (*PodPredicate) Generic(e event.GenericEvent) bool {
-	return false
-}
-
 type DnsClassPredicate struct {
 	predicate.Funcs
 }
@@ -397,7 +262,7 @@ type DnsClassPredicate struct {
 func (*DnsClassPredicate) Create(e event.CreateEvent) bool {
 	annotations := e.Object.GetAnnotations()
 	if val, ok := annotations[IsReconciled]; ok {
-		return val == FalseStr
+		return val == "false"
 	}
 	return true
 }

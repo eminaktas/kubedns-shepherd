@@ -17,8 +17,8 @@ spec:
   scope: Cluster
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .status.conditions[*].type
-      name: Status
+    - jsonPath: .status.conditions[*].status
+      name: Ready
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
@@ -91,8 +91,6 @@ spec:
                 items:
                   type: string
                 type: array
-              resetDNSPolicyTo:
-                type: string
             type: object
           status:
             description: DNSClassStatus defines the observed state of DNSClass

@@ -24,12 +24,15 @@ BUNDLE_DEFAULT_CHANNEL := --default-channel=$(DEFAULT_CHANNEL)
 endif
 BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 
+# Default namespace to deploy k8s resources
+NAMESPACE ?= kubedns-shepherd-system
+
 # IMAGE_TAG_BASE defines the docker.io namespace and part of the image name for remote images.
 # This variable is used to construct full image tags for bundle and catalog images.
 #
 # For example, running 'make bundle-build bundle-push catalog-build catalog-push' will build and push both
 # kubedns-shepherd.io/kubedns-shepherd-bundle:$VERSION and kubedns-shepherd.io/kubedns-shepherd-catalog:$VERSION.
-IMAGE_TAG_BASE ?= kubedns-shepherd.io/kubedns-shepherd
+IMAGE_TAG_BASE ?= eminaktas/kubedns-shepherd
 
 # BUNDLE_IMG defines the image:tag used for the bundle.
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)
@@ -93,15 +96,13 @@ all: build
 help: ## Display this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
-##@ Customized
+##@ Customization
 
-CERTSDIR=/tmp/k8s-webhook-server/serving-certs
-.PHONY: generate-certs
-generate-certs: ## Generates the certs required to run webhooks locally
-	mkdir -p $(CERTSDIR)
-	cd $(CERTSDIR) && \
-		openssl genrsa 2048 > tls.key && \
-		openssl req -new -x509 -nodes -sha256 -days 365 -key tls.key -out tls.crt -subj "/C=XX"
+.PHONY: download-secrets
+download-secrets: ## Downloads the webhook key and cert to local env for local testing
+	mkdir -p ./tmp && \
+	$(KUBECTL) get secret webhook-server-cert -o=jsonpath='{.data.tls\.crt}' | base64 -d > ./tmp/k8s-webhook-server/serving-certs/tls.crt && \
+	$(KUBECTL) get secret webhook-server-cert -o=jsonpath='{.data.tls\.key}' | base64 -d > ./tmp/k8s-webhook-server/serving-certs/tls.key
 
 ##@ Development
 

@@ -17,10 +17,6 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"fmt"
-	"slices"
-
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -46,10 +42,6 @@ var _ webhook.Defaulter = &DNSClass{}
 func (r *DNSClass) Default() {
 	dnsclasslog.Info("default", "name", r.Name)
 
-	if r.Spec.ResetDNSPolicyTo == "" {
-		r.Spec.ResetDNSPolicyTo = string(corev1.DNSClusterFirst)
-	}
-
 	if r.Spec.Namespaces == nil {
 		r.Spec.Namespaces = []string{"all"}
 	}
@@ -58,8 +50,6 @@ func (r *DNSClass) Default() {
 //+kubebuilder:webhook:path=/validate-config-kubedns-shepherd-io-v1alpha1-dnsclass,mutating=false,failurePolicy=fail,sideEffects=None,groups=config.kubedns-shepherd.io,resources=dnsclasses,verbs=create;update,versions=v1alpha1,name=vdnsclass.kb.io,admissionReviewVersions=v1
 
 var _ webhook.Validator = &DNSClass{}
-
-var allowedDNSPolicies = []string{string(corev1.DNSClusterFirst), string(corev1.DNSDefault), string(corev1.DNSClusterFirstWithHostNet)}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *DNSClass) ValidateCreate() (admission.Warnings, error) {
@@ -81,8 +71,5 @@ func (r *DNSClass) ValidateDelete() (admission.Warnings, error) {
 }
 
 func (r *DNSClass) validate() (admission.Warnings, error) {
-	if !slices.Contains(allowedDNSPolicies, r.Spec.ResetDNSPolicyTo) {
-		return nil, fmt.Errorf("%s is not allowed for resetDNSPolicyTo. Allowed DNS Policies: %v", r.Spec.ResetDNSPolicyTo, allowedDNSPolicies)
-	}
 	return nil, nil
 }

@@ -36,9 +36,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	configv1alpha1 "github.com/eminaktas/kubedns-shepherd/api/v1alpha1"
 	"github.com/eminaktas/kubedns-shepherd/internal/controller"
+	webhook_controller "github.com/eminaktas/kubedns-shepherd/internal/webhook"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -81,14 +83,16 @@ func main() {
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	flag.BoolVar(&disablePodReconciling, "disable-pod-reconciling", false,
-		"If set, disables dynamic DNS configuration for pods without owner references. "+
-			"This prevents potential data loss if the controller restarts or is removed "+
-			"while working on a pod object, due to limitations in updating pod resources.")
+		"If set, this flag disables dynamic DNS configuration for pods. This feature is not disabled by default. "+
+			"any changes to DNSClass configuration or the addition of a new DNSClass will trigger a restart of "+
+			"all pods affected by these changes to apply the new DNS configuration.")
 	flag.IntVar(&maxConcurrentReconcilesForPodsReconciler, "max-concurrent-reconciles-for-pods-reconciler", 4,
 		"Specifies the maximum number of concurrent reconciles for the Pods reconciler.")
 	flag.IntVar(&maxConcurrentReconcilesForDNSClassReconciler, "max-concurrent-reconciles-for-dnsclass-reconciler", 2,
 		"Specifies the maximum number of concurrent reconciles for the DNSClass reconciler.")
-	opts := zap.Options{}
+	opts := zap.Options{
+		Development: true,
+	}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
@@ -117,13 +121,16 @@ func main() {
 	}
 
 	webhookServer := webhook.NewServer(webhook.Options{
-		TLSOpts: tlsOpts,
+		// TLSOpts: tlsOpts,
 	})
 
-	if disablePodReconciling {
+	if !disablePodReconciling {
 		setupLog.Info(
-			"disablePodReconciling is enabled. Disabled dynamic DNS configuration " +
-				"for pods without owner references",
+			"Dynamic DNS configuration is enabled. Use -disable-pod-reconciling to disable it.",
+		)
+	} else {
+		setupLog.Info(
+			"Dynamic DNS configuration is disabled",
 		)
 	}
 
@@ -155,29 +162,24 @@ func main() {
 		os.Exit(1)
 	}
 	if err = (&controller.DNSClassReconciler{
-		Client:                mgr.GetClient(),
-		Scheme:                mgr.GetScheme(),
-		DisablePodReconciling: disablePodReconciling,
+		Client: mgr.GetClient(),
 		MaxConcurrentReconcilesForDNSClassReconciler: maxConcurrentReconcilesForDNSClassReconciler,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DNSClass")
 		os.Exit(1)
 	}
-	if err = (&controller.PodsReconciler{
-		Client:                                   mgr.GetClient(),
-		Scheme:                                   mgr.GetScheme(),
-		DisablePodReconciling:                    disablePodReconciling,
-		MaxConcurrentReconcilesForPodsReconciler: maxConcurrentReconcilesForPodsReconciler,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Pods")
+
+	if err = (&configv1alpha1.DNSClass{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "DNSClass")
 		os.Exit(1)
 	}
-	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
-		if err = (&configv1alpha1.DNSClass{}).SetupWebhookWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create webhook", "webhook", "DNSClass")
-			os.Exit(1)
-		}
-	}
+
+	mgr.GetWebhookServer().Register("/mutate-v1-pod", &webhook.Admission{
+		Handler: &webhook_controller.PodMutator{
+			Client:  mgr.GetClient(),
+			Decoder: admission.NewDecoder(mgr.GetScheme()),
+		},
+	})
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

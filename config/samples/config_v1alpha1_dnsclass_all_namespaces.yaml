@@ -12,7 +12,6 @@ spec:
   # If `all` set, the DNSClass configuration can be applied to all pods in all namespaces.
   # namespaces:
     # - all
-  resetDNSPolicyTo: Default
   dnsConfig:
     nameservers:
       - 10.96.0.10

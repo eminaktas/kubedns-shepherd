@@ -46,10 +46,15 @@ func (p *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 		return admission.Errored(http.StatusBadRequest, err)
 	}
 
+	podName := pod.GetName()
+	if pod.Name == "" {
+		podName = pod.GetGenerateName() + "*"
+	}
+
 	var dnsClass configv1alpha1.DNSClass
 	dnsClass, err = common.GetDNSClass(ctx, p.Client, pod.Namespace)
 	if err != nil {
-		msg := fmt.Sprintf("Failed to detect a DNSClass for %s/%s. Skipping update for this resource", pod.Namespace, pod.GetGenerateName())
+		msg := fmt.Sprintf("Failed to detect a DNSClass for %s/%s. Skipping update for this resource", pod.Namespace, podName)
 		logger.Info(msg, "error", err)
 		return admission.Allowed(msg)
 	}
@@ -64,7 +69,7 @@ func (p *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 		notAvailable = true
 	}
 	if notAvailable {
-		msg := fmt.Sprintf("Found DNSClass is not available for %s/%s. Skipping update for this resource", pod.Namespace, pod.GetGenerateName())
+		msg := fmt.Sprintf("Found DNSClass is not available for %s/%s. Skipping update for this resource", pod.Namespace, podName)
 		logger.Info(msg, "error", err)
 		return admission.Allowed(msg)
 	}
@@ -72,7 +77,7 @@ func (p *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 	// Configure Pod Object
 	err = p.configureDNSForPod(pod, dnsClass)
 	if err != nil {
-		msg := fmt.Sprintf("Failed to configure for %s/%s. Skipping update for this resource", pod.Namespace, pod.GetGenerateName())
+		msg := fmt.Sprintf("Failed to configure for %s/%s. Skipping update for this resource", pod.Namespace, podName)
 		logger.Error(err, msg)
 		return admission.Allowed(msg)
 	}
@@ -82,7 +87,7 @@ func (p *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
 
-	logger.Info(fmt.Sprintf("DNSConfig configured for %s/%s with %s DNSClass", pod.Namespace, pod.GetGenerateName(), dnsClass.Name))
+	logger.Info(fmt.Sprintf("DNSConfig configured for %s/%s with %s DNSClass", pod.Namespace, podName, dnsClass.Name))
 
 	return admission.PatchResponseFromRaw(req.Object.Raw, marshaledPod)
 }

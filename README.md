@@ -6,37 +6,17 @@ KubeDNS Shepherd is a Kubernetes controller that manages the DNS configuration o
 
 ### To Deploy on the cluster
 
-**Build and push your image to the location specified by `IMG`:**
+**Deploy the KubeDNS Shepherd to the cluster:**
 
 ```sh
-make docker-build docker-push IMG=<some-registry>/kubedns-shepherd:tag
-```
-
-**NOTE:** This image ought to be published in the personal registry you specified.
-And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
-
-**Install the CRDs into the cluster:**
-
-```sh
-make install
-```
-
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
-
-```sh
-make deploy IMG=<some-registry>/kubedns-shepherd:tag
+make deploy
 ```
 
 > **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
 privileges or be logged in as admin.
 
 **Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
-
-```sh
-kubectl apply -k config/samples/
-```
+You can apply any example from the config/sample:
 
 >**NOTE**: Ensure that the samples has default values to test it out.
 
@@ -62,9 +42,13 @@ make undeploy
 
 ## Contributing
 
-**NOTE:** Run `make help` for more information on all potential `make` targets
+Please read our [Contributing Guidelines](CONTRIBUTING.md) before contributing.
 
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
+More information can be found at our [Development Guide](DEVELOPMENT.md)
+
+## Code of Conduct
+
+Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before engaging with our community.
 
 ## License
 

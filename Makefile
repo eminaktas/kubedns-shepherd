@@ -54,7 +54,7 @@ endif
 OPERATOR_SDK_VERSION ?= v1.34.1
 
 # Image URL to use all building/pushing image targets
-IMG ?= eminaktas/kubedns-shepherd:latest
+IMG ?= ghcr.io/eminaktas/kubedns-shepherd:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.28.3
 
@@ -151,7 +151,7 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 
 .PHONY: build
 build: manifests generate fmt vet ## Build manager binary.
-	go build -o bin/manager cmd/main.go
+	go build -o bin/kubedns-shepherd cmd/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.

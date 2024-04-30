@@ -36,7 +36,7 @@ type PodMutator struct {
 	*admission.Decoder
 }
 
-// +kubebuilder:webhook:path=/mutate-v1-pod,mutating=true,failurePolicy=fail,sideEffects=None,groups="",resources=pods,verbs=create;update,versions=v1,name=mpod.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/mutate-v1-pod,mutating=true,failurePolicy=ignore,sideEffects=None,groups="",resources=pods,verbs=create;update,versions=v1,name=mpod.kb.io,admissionReviewVersions=v1
 
 func (p *PodMutator) Handle(ctx context.Context, req admission.Request) admission.Response {
 	logger := log.FromContext(ctx)

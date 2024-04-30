@@ -1,3 +1,19 @@
+/*
+Copyright 2024.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package webhook_controller
 
 import (
@@ -38,6 +54,21 @@ func (p *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 		return admission.Allowed(msg)
 	}
 
+	// Check if dnsClass is available
+	notAvailable := false
+	annotations := dnsClass.GetAnnotations()
+	if annotations == nil {
+		notAvailable = true
+	}
+	if val, ok := annotations[common.IsReconciled]; !ok || val == "false" {
+		notAvailable = true
+	}
+	if notAvailable {
+		msg := fmt.Sprintf("Found DNSClass is not available for %s/%s. Skipping update for this resource", pod.Namespace, pod.GetGenerateName())
+		logger.Info(msg, "error", err)
+		return admission.Allowed(msg)
+	}
+
 	// Configure Pod Object
 	err = p.configureDNSForPod(pod, dnsClass)
 	if err != nil {
@@ -58,10 +89,12 @@ func (p *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 
 func (r *PodMutator) configureDNSForPod(pod *corev1.Pod, dnsClass configv1alpha1.DNSClass) error {
 	// Set DNSConfig
-	pod.Spec.DNSConfig = dnsClass.Spec.DNSConfig
+	if dnsClass.Spec.DNSPolicy == corev1.DNSNone {
+		pod.Spec.DNSConfig = dnsClass.Spec.DNSConfig
+	}
 
 	// Set DNSPolicy to None
-	pod.Spec.DNSPolicy = corev1.DNSNone
+	pod.Spec.DNSPolicy = dnsClass.Spec.DNSPolicy
 
 	if err := common.UpdateAnnotation(pod, common.DNSClassName, dnsClass.Name); err != nil {
 		return err

@@ -56,6 +56,7 @@ type DNSClassReconciler struct {
 //+kubebuilder:rbac:groups=apps,resources=replicasets,verbs=get;list;watch;update;patch
 //+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;update;patch
 
+// Reconcile reconciles a DNSClass object
 func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("Reconciling for DNSClass")
@@ -73,7 +74,7 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	// Mark the resource is not reconciled with `kubedns-shepherd.io/is-reconciled=false` annotation
+	// Mark the resource as not reconciled
 	annotations := dnsClass.GetAnnotations()
 	if annotations == nil {
 		annotations = make(map[string]string)
@@ -89,17 +90,19 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// Add default nameservers if not defined in object
-	if dnsClass.Spec.DNSConfig.Nameservers == nil {
-		dnsClass.Spec.DNSConfig.Nameservers, err = r.getNameservers(ctx)
-		if err != nil {
-			logger.Error(err, "Failed to set nameservers to DNSClass")
-			return ctrl.Result{}, err
+	if dnsClass.Spec.DNSPolicy == corev1.DNSNone {
+		if dnsClass.Spec.DNSConfig.Nameservers == nil {
+			dnsClass.Spec.DNSConfig.Nameservers, err = r.getNameservers(ctx)
+			if err != nil {
+				logger.Error(err, "Failed to set nameservers to DNSClass")
+				return ctrl.Result{}, err
+			}
+			if err := r.Update(ctx, dnsClass); err != nil {
+				logger.Error(err, "Failed to update DNSClass to add nameservers")
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{Requeue: true, RequeueAfter: common.ReconcilePeriod}, nil
 		}
-		if err := r.Update(ctx, dnsClass); err != nil {
-			logger.Error(err, "Failed to update DNSClass to add nameservers")
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{Requeue: true, RequeueAfter: common.ReconcilePeriod}, nil
 	}
 
 	// Set the status as Unknown when no status are available
@@ -111,6 +114,7 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 
+	// Manage finalizers
 	if !controllerutil.ContainsFinalizer(dnsClass, common.FinalizerString) {
 		logger.Info("Adding Finalizer")
 		if ok := controllerutil.AddFinalizer(dnsClass, common.FinalizerString); !ok {
@@ -126,6 +130,7 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{Requeue: true, RequeueAfter: common.ReconcilePeriod}, nil
 	}
 
+	// Perform finalizer operations before deletion
 	if !dnsClass.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(dnsClass, common.FinalizerString) {
 			logger.Info("Performing Finalizer Operations before deleting DNSClass")
@@ -143,11 +148,13 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				return ctrl.Result{Requeue: true, RequeueAfter: common.ReconcilePeriod}, nil
 			}
 
-			// Reverts the DNS Configuration
-			err := r.triggerRestart(ctx, dnsClass)
-			if err != nil {
-				logger.Error(err, "Failed to revert the DNS Configuration for matching workloads")
-				return ctrl.Result{}, err
+			if !dnsClass.Spec.DisablePodRestart {
+				// Revert the DNS Configuration
+				err := r.triggerRestart(ctx, dnsClass)
+				if err != nil {
+					logger.Error(err, "Failed to revert the DNS Configuration for matching workloads")
+					return ctrl.Result{}, err
+				}
 			}
 
 			meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: common.TypeDegraded,
@@ -173,13 +180,7 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, nil
 	}
 
-	err = r.triggerRestart(ctx, dnsClass)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-
-	// Marks the resource as reconciled with `kubedns-shepherd.io/is-reconciled=true` annotation
-	// We use this annotation to prevent unwanted reconciles
+	// Mark the resource as reconciled
 	annotations[common.IsReconciled] = "true"
 	dnsClass.SetAnnotations(annotations)
 
@@ -188,7 +189,15 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	// The following implementation will update the status
+	// Restart workloads
+	if !dnsClass.Spec.DisablePodRestart {
+		err = r.triggerRestart(ctx, dnsClass)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	// Update status
 	meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: common.TypeAvailable,
 		Status: metav1.ConditionTrue, Reason: "Reconciling",
 		Message: "DNSClass reconciled; workloads restarted for DNS configuration update"})
@@ -204,7 +213,7 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 // triggerRestart adds an annotations to restart pods, this way webhook will take over to add the dns configurations
 func (r *DNSClassReconciler) triggerRestart(ctx context.Context, dnsClass *configv1alpha1.DNSClass) error {
 	logger := log.FromContext(ctx)
-	workloads, err := common.ListWorkloadObjects(ctx, r.Client, dnsClass.Spec.Namespaces)
+	workloads, err := common.ListWorkloadObjects(ctx, r.Client, dnsClass)
 	if err != nil {
 		return err
 	}

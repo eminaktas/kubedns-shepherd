@@ -9,9 +9,17 @@ metadata:
     app.kubernetes.io/created-by: kubedns-shepherd
   name: dnsclass-all-namespaces-sample
 spec:
-  # If `all` set, the DNSClass configuration can be applied to all pods in all namespaces.
-  # namespaces:
-    # - all
+  # If set, this flag disables dynamic DNS configuration for pods. This feature is not disabled by default,
+  # any changes to DNSClass configuration or the addition of a new DNSClass will trigger a restart of
+  # all pods affected by these changes to apply the new DNS configuration.
+  disablePodRestart: false
+  disabledNamespaces:
+  - kube-system
+  allowedDNSPolicies:
+  - None
+  - ClusterFirst
+  - ClusterFirstWithHostNet
+  dnsPolicy: None
   dnsConfig:
     nameservers:
       - 10.96.0.10

@@ -7,15 +7,10 @@ metadata:
     app.kubernetes.io/part-of: kubedns-shepherd
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/created-by: kubedns-shepherd
-  name: dnsclass-without-nameserver-sample
+  name: dnsclass-default-sample
 spec:
   allowedNamespaces:
     - default
-  disablePodRestart: true
-  dnsConfig:
-    searches:
-      - svc.cluster.local
-    options:
-      - name: ndots
-        value: "2"
-      - name: edns0 
+  disabledNamespaces:
+    - kube-system
+  dnsPolicy: Default

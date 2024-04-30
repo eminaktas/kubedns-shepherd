@@ -48,6 +48,21 @@ spec:
           spec:
             description: DNSClassSpec defines the desired state of DNSClass
             properties:
+              allowedDNSPolicies:
+                items:
+                  description: DNSPolicy defines how a pod's DNS will be configured.
+                  type: string
+                type: array
+              allowedNamespaces:
+                items:
+                  type: string
+                type: array
+              disablePodRestart:
+                type: boolean
+              disabledNamespaces:
+                items:
+                  type: string
+                type: array
               dnsConfig:
                 description: |-
                   PodDNSConfig defines the DNS parameters of a pod in addition to
@@ -87,10 +102,9 @@ spec:
                       type: string
                     type: array
                 type: object
-              namespaces:
-                items:
-                  type: string
-                type: array
+              dnsPolicy:
+                description: DNSPolicy defines how a pod's DNS will be configured.
+                type: string
             type: object
           status:
             description: DNSClassStatus defines the observed state of DNSClass

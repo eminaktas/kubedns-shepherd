@@ -45,7 +45,7 @@ const (
 
 	FinalizerString = "config.kubedns-shepherd.io/finalizer"
 
-	// Annotation keys
+	// Annotations to be used in resources
 	DNSClassName = "kubedns-shepherd.io/dns-class-name"
 	IsReconciled = "kubedns-shepherd.io/is-reconciled"
 	RestartedAt  = "kubedns-shepherd.io/restartedAt"
@@ -58,41 +58,49 @@ const (
 )
 
 var (
-	errUnkownKind      = errors.New("unknown kind")
-	errUnkownOwnerKind = errors.New("unknown owner kind")
+	errUnkownKind = errors.New("unknown kind")
 )
 
+// Workload used to define objects
 type Workload struct {
 	Name      string
 	Namespace string
 	Kind      string
 }
 
+// GetDNSClass finds the DNSClass for the pod object with its namespace
 func GetDNSClass(ctx context.Context, c client.Client, podNamespace string) (configv1alpha1.DNSClass, error) {
-	var dnsClass configv1alpha1.DNSClass
-	var dnsClassList configv1alpha1.DNSClassList
+	var (
+		dnsClass     configv1alpha1.DNSClass
+		dnsClassList configv1alpha1.DNSClassList
+	)
+
 	err := c.List(ctx, &dnsClassList)
 	if err != nil {
 		return configv1alpha1.DNSClass{}, err
 	}
 
-	for _, val := range dnsClassList.Items {
-		if slices.Contains(val.Spec.Namespaces, podNamespace) {
-			dnsClass = val
-			break
+	for _, dnsClassItem := range dnsClassList.Items {
+		if slices.Contains(dnsClassItem.Spec.DisabledNamespaces, podNamespace) {
+			continue
 		}
-		if slices.Contains(val.Spec.Namespaces, "all") {
-			dnsClass = val
+		if slices.Contains(dnsClassItem.Spec.AllowedNamespaces, podNamespace) {
+			dnsClass = dnsClassItem
+			break // Exit the loop once a DNSClass is found
+		}
+		if dnsClassItem.Spec.AllowedNamespaces == nil {
+			dnsClass = dnsClassItem
 		}
 	}
 
 	if reflect.DeepEqual(dnsClass, configv1alpha1.DNSClass{}) {
-		return configv1alpha1.DNSClass{}, errors.New("no dnsclass found")
+		return configv1alpha1.DNSClass{}, errors.New("no matching DNSClass found for namespace: " + podNamespace)
 	}
 	return dnsClass, nil
 }
 
-func ListWorkloadObjects(ctx context.Context, c client.Client, namespaces []string) ([]*Workload, error) {
+// ListWorkloadObjects creates a Workload list for matching resources
+func ListWorkloadObjects(ctx context.Context, c client.Client, dnsClass *configv1alpha1.DNSClass) ([]*Workload, error) {
 	logger := log.FromContext(ctx)
 
 	var (
@@ -102,7 +110,13 @@ func ListWorkloadObjects(ctx context.Context, c client.Client, namespaces []stri
 		seen      map[string]struct{} = make(map[string]struct{})
 	)
 
-	for _, namespace := range namespaces {
+	allowedNamespaces := dnsClass.Spec.AllowedNamespaces
+	// If allowedNamespaces is empty, add an item to start the for loop
+	if allowedNamespaces == nil {
+		allowedNamespaces = []string{"all"}
+	}
+
+	for _, namespace := range allowedNamespaces {
 		if namespace == "all" {
 			opts = nil
 		} else {
@@ -117,6 +131,9 @@ func ListWorkloadObjects(ctx context.Context, c client.Client, namespaces []stri
 		}
 
 		for _, pod := range pods.Items {
+			if slices.Contains(dnsClass.Spec.DisabledNamespaces, pod.Namespace) {
+				continue
+			}
 			workload, err := getOwnerObject(ctx, c, &pod)
 			if err != nil {
 				logger.Info(fmt.Sprintf("Failed to get owner object for %s/%s. Skipping update for this resource.", pod.Namespace, pod.Name), "error", err)
@@ -168,7 +185,7 @@ func getOwnerObject(ctx context.Context, c client.Client, pod *corev1.Pod) (*Wor
 				Kind:      owner.Kind,
 			}, nil
 		} else {
-			return nil, errUnkownOwnerKind
+			return nil, errors.New("unknown owner kind: " + owner.Kind)
 		}
 	}
 
@@ -179,6 +196,7 @@ func getOwnerObject(ctx context.Context, c client.Client, pod *corev1.Pod) (*Wor
 	}, nil
 }
 
+// GetObjectFromKindString converts a string to a Kubernetes object type
 func GetObjectFromKindString(kind string) (client.Object, error) {
 	switch kind {
 	case DeploymentStr:
@@ -196,6 +214,7 @@ func GetObjectFromKindString(kind string) (client.Object, error) {
 	}
 }
 
+// RemoveAnnotation removes an annotation from a Kubernetes object
 func RemoveAnnotation(obj client.Object, key string) error {
 	switch o := obj.(type) {
 	case *appsv1.Deployment:
@@ -218,6 +237,7 @@ func RemoveAnnotation(obj client.Object, key string) error {
 	}
 }
 
+// UpdateAnnotation updates or adds an annotation to a Kubernetes object
 func UpdateAnnotation(obj client.Object, key, value string) error {
 	switch o := obj.(type) {
 	case *appsv1.Deployment:
@@ -255,10 +275,12 @@ func UpdateAnnotation(obj client.Object, key, value string) error {
 	}
 }
 
+// DnsClassPredicate is a predicate for DNSClass objects
 type DnsClassPredicate struct {
 	predicate.Funcs
 }
 
+// Create checks if a DNSClass object is marked as reconciled
 func (*DnsClassPredicate) Create(e event.CreateEvent) bool {
 	annotations := e.Object.GetAnnotations()
 	if val, ok := annotations[IsReconciled]; ok {
@@ -267,15 +289,18 @@ func (*DnsClassPredicate) Create(e event.CreateEvent) bool {
 	return true
 }
 
+// Update checks if a DNSClass object is updated
 func (*DnsClassPredicate) Update(e event.UpdateEvent) bool {
 	// If resources updated, we need to validate for DNS Configuration
 	return e.ObjectNew.GetGeneration() != e.ObjectOld.GetGeneration()
 }
 
+// Delete always returns true for DNSClass deletion events
 func (*DnsClassPredicate) Delete(e event.DeleteEvent) bool {
 	return true
 }
 
+// Generic always returns false for generic events
 func (*DnsClassPredicate) Generic(e event.GenericEvent) bool {
 	return false
 }

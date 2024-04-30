@@ -23,8 +23,12 @@ import (
 
 // DNSClassSpec defines the desired state of DNSClass
 type DNSClassSpec struct {
-	Namespaces []string             `json:"namespaces,omitempty"`
-	DNSConfig  *corev1.PodDNSConfig `json:"dnsConfig,omitempty"`
+	AllowedNamespaces  []string             `json:"allowedNamespaces,omitempty"`
+	DisabledNamespaces []string             `json:"disabledNamespaces,omitempty"`
+	AllowedDNSPolicies []corev1.DNSPolicy   `json:"allowedDNSPolicies,omitempty"`
+	DisablePodRestart  bool                 `json:"disablePodRestart,omitempty"`
+	DNSPolicy          corev1.DNSPolicy     `json:"dnsPolicy,omitempty"`
+	DNSConfig          *corev1.PodDNSConfig `json:"dnsConfig,omitempty"`
 }
 
 // DNSClassStatus defines the observed state of DNSClass

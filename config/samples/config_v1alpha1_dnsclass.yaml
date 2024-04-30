@@ -9,8 +9,10 @@ metadata:
     app.kubernetes.io/created-by: kubedns-shepherd
   name: dnsclass-sample
 spec:
-  namespaces:
+  allowedNamespaces:
     - default
+  disabledNamespaces:
+    - kube-system
   dnsConfig:
     nameservers:
       - 10.96.0.10

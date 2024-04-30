@@ -69,7 +69,6 @@ func main() {
 	var probeAddr string
 	var secureMetrics bool
 	var enableHTTP2 bool
-	var disablePodReconciling bool
 	var maxConcurrentReconcilesForPodsReconciler int
 	var maxConcurrentReconcilesForDNSClassReconciler int
 	flag.BoolVar(&printVersion, "version", false, "Prints the version")
@@ -82,10 +81,6 @@ func main() {
 		"If set the metrics endpoint is served securely")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
-	flag.BoolVar(&disablePodReconciling, "disable-pod-reconciling", false,
-		"If set, this flag disables dynamic DNS configuration for pods. This feature is not disabled by default. "+
-			"any changes to DNSClass configuration or the addition of a new DNSClass will trigger a restart of "+
-			"all pods affected by these changes to apply the new DNS configuration.")
 	flag.IntVar(&maxConcurrentReconcilesForPodsReconciler, "max-concurrent-reconciles-for-pods-reconciler", 4,
 		"Specifies the maximum number of concurrent reconciles for the Pods reconciler.")
 	flag.IntVar(&maxConcurrentReconcilesForDNSClassReconciler, "max-concurrent-reconciles-for-dnsclass-reconciler", 2,
@@ -121,18 +116,8 @@ func main() {
 	}
 
 	webhookServer := webhook.NewServer(webhook.Options{
-		// TLSOpts: tlsOpts,
+		TLSOpts: tlsOpts,
 	})
-
-	if !disablePodReconciling {
-		setupLog.Info(
-			"Dynamic DNS configuration is enabled. Use -disable-pod-reconciling to disable it.",
-		)
-	} else {
-		setupLog.Info(
-			"Dynamic DNS configuration is disabled",
-		)
-	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,

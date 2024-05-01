@@ -3,7 +3,7 @@ kind: DNSClass
 metadata:
   labels:
     app.kubernetes.io/name: dnsclass
-    app.kubernetes.io/instance: dnsclass-sample
+    app.kubernetes.io/instance: dnsclass-without-nameserver-sample
     app.kubernetes.io/part-of: kubedns-shepherd
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/created-by: kubedns-shepherd
@@ -11,13 +11,10 @@ metadata:
 spec:
   allowedNamespaces:
     - default
-  # If set, any changes to DNSClass configuration or the addition of a new DNSClass
-  # will trigger a restart for all matched pods to apply the new DNS configuration.
-  # This feature is disabled by default.
-  enablePodRestart: true
   dnsConfig:
     searches:
-      - svc.cluster.local
+      - "svc.{{ .clusterDomain }}"
+      - "{{ .podNamespace }}.svc.{{ .clusterDomain }}"
     options:
       - name: ndots
         value: "2"

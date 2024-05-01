@@ -19,19 +19,16 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
-	"time"
 
-	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	configv1alpha1 "github.com/eminaktas/kubedns-shepherd/api/v1alpha1"
@@ -47,7 +44,6 @@ type DNSClassReconciler struct {
 
 //+kubebuilder:rbac:groups=config.kubedns-shepherd.io,resources=dnsclasses,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=config.kubedns-shepherd.io,resources=dnsclasses/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=config.kubedns-shepherd.io,resources=dnsclasses/finalizers,verbs=update
 //+kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 //+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;update;patch
@@ -89,22 +85,6 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{Requeue: true, RequeueAfter: common.ReconcilePeriod}, nil
 	}
 
-	// Add default nameservers if not defined in object
-	if dnsClass.Spec.DNSPolicy == corev1.DNSNone {
-		if dnsClass.Spec.DNSConfig.Nameservers == nil {
-			dnsClass.Spec.DNSConfig.Nameservers, err = r.getNameservers(ctx)
-			if err != nil {
-				logger.Error(err, "Failed to set nameservers to DNSClass")
-				return ctrl.Result{}, err
-			}
-			if err := r.Update(ctx, dnsClass); err != nil {
-				logger.Error(err, "Failed to update DNSClass to add nameservers")
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{Requeue: true, RequeueAfter: common.ReconcilePeriod}, nil
-		}
-	}
-
 	// Set the status as Unknown when no status are available
 	if dnsClass.Status.Conditions == nil || len(dnsClass.Status.Conditions) == 0 {
 		meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: common.TypeAvailable, Status: metav1.ConditionUnknown, Reason: "Reconciling", Message: "Starting reconciliation"})
@@ -114,71 +94,60 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		}
 	}
 
-	if dnsClass.Spec.EnablePodRestart {
-		// Manage finalizers
-		if !controllerutil.ContainsFinalizer(dnsClass, common.FinalizerString) {
-			logger.Info("Adding Finalizer")
-			if ok := controllerutil.AddFinalizer(dnsClass, common.FinalizerString); !ok {
-				logger.Error(err, "Failed to add finalizer to DNSClass")
-				return ctrl.Result{Requeue: true}, nil
-			}
+	// Fill discovered fields in DNSClass object
+	if dnsClass.Spec.DNSPolicy == corev1.DNSNone {
+		undiscoveredField := []string{}
+		discoveredFields := &configv1alpha1.DiscoveredFields{}
+		if dnsClass.Spec.DiscoveredFields != nil {
+			discoveredFields = dnsClass.Spec.DiscoveredFields
+		}
+		discoveredFields.Nameservers, err = r.getNameservers(ctx)
+		if err != nil {
+			undiscoveredField = append(undiscoveredField, "nameservers")
+			logger.Info("Failed to discover nameservers", "error", err)
+		}
 
-			if err = r.Update(ctx, dnsClass); err != nil {
-				logger.Error(err, "Failed to update DNSClass to add finalizer")
+		discoveredFields.ClusterDomain, err = r.getClusterDomain(ctx)
+		if err != nil {
+			undiscoveredField = append(undiscoveredField, "clusterDomain")
+			logger.Info("Failed to discover clusterDomain", "error", err)
+		}
+
+		discoveredFields.ClusterName, err = r.getClusterName(ctx)
+		if err != nil {
+			undiscoveredField = append(undiscoveredField, "clusterName")
+			logger.Info("Failed to discover clusterName", "error", err)
+		}
+
+		discoveredFields.DNSDomain, err = r.getDNSDomain(ctx)
+		if err != nil {
+			undiscoveredField = append(undiscoveredField, "dnsDomain")
+			logger.Info("Failed to discover dnsDomain", "error", err)
+		}
+
+		// Update status if any discovery failing
+		if undiscoveredField != nil {
+			meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: common.TypeAvailable,
+				Status: metav1.ConditionFalse, Reason: "Reconciling",
+				Message: fmt.Sprintf("Failed to add some discovered fields; %v. Ignore if the parameters are not used.", undiscoveredField)})
+			if err = r.Status().Update(ctx, dnsClass); err != nil {
+				logger.Error(err, "Failed to update DNSClass to add the status")
+				return ctrl.Result{}, err
+			}
+		}
+
+		if !reflect.DeepEqual(discoveredFields, dnsClass.Spec.DiscoveredFields) {
+			dnsClass.Spec.DiscoveredFields = discoveredFields
+
+			if err := r.Update(ctx, dnsClass); err != nil {
+				logger.Error(err, "Failed to update DNSClass to add discovered fields")
 				return ctrl.Result{}, err
 			}
 
 			return ctrl.Result{Requeue: true, RequeueAfter: common.ReconcilePeriod}, nil
 		}
-
-		// Perform finalizer operations before deletion
-		if !dnsClass.DeletionTimestamp.IsZero() {
-			if controllerutil.ContainsFinalizer(dnsClass, common.FinalizerString) {
-				logger.Info("Performing Finalizer Operations before deleting DNSClass")
-
-				// Add "Downgrade" status
-				if !meta.IsStatusConditionPresentAndEqual(dnsClass.Status.Conditions, common.TypeDegraded, metav1.ConditionUnknown) {
-					meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: common.TypeDegraded,
-						Status: metav1.ConditionUnknown, Reason: "Finalizing",
-						Message: "Performing finalizer operations for DNSClass"})
-
-					if err := r.Status().Update(ctx, dnsClass); err != nil {
-						logger.Error(err, "Failed to update DNSClass to add the status")
-						return ctrl.Result{}, err
-					}
-					return ctrl.Result{Requeue: true, RequeueAfter: common.ReconcilePeriod}, nil
-				}
-
-				// Revert the DNS Configuration
-				err := r.triggerRestart(ctx, dnsClass)
-				if err != nil {
-					logger.Error(err, "Failed to restart pods to revert the DNS Configuration for matching workloads")
-					return ctrl.Result{}, err
-				}
-
-				meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: common.TypeDegraded,
-					Status: metav1.ConditionTrue, Reason: "Finalizing",
-					Message: "Finalizer operations were successfully accomplished"})
-
-				if err := r.Status().Update(ctx, dnsClass); err != nil {
-					logger.Error(err, "Failed to update DNSClass to add the status")
-					return ctrl.Result{}, err
-				}
-
-				logger.Info("Removing Finalizer after successfully perform the operations")
-				if ok := controllerutil.RemoveFinalizer(dnsClass, common.FinalizerString); !ok {
-					logger.Error(err, "Failed to remove finalizer from DNSClass")
-					return ctrl.Result{Requeue: true}, nil
-				}
-
-				if err := r.Update(ctx, dnsClass); err != nil {
-					logger.Error(err, "Failed to update DNSClass to remove finalizer")
-					return ctrl.Result{}, err
-				}
-			}
-			return ctrl.Result{}, nil
-		}
 	}
+
 	// Mark the resource as reconciled
 	annotations[common.IsReconciled] = "true"
 	dnsClass.SetAnnotations(annotations)
@@ -188,19 +157,10 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	if dnsClass.Spec.EnablePodRestart {
-		// Restart workloads
-		err = r.triggerRestart(ctx, dnsClass)
-		if err != nil {
-			logger.Error(err, "Failed to restart pods to apply the DNS Configuration for matching workloads")
-			return ctrl.Result{}, err
-		}
-	}
-
 	// Update status
 	meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: common.TypeAvailable,
 		Status: metav1.ConditionTrue, Reason: "Reconciling",
-		Message: "DNSClass reconciled; workloads restarted for DNS configuration update"})
+		Message: "DNSClass reconciled."})
 
 	if err := r.Status().Update(ctx, dnsClass); err != nil {
 		logger.Error(err, "Failed to update DNSClass to add the status")
@@ -210,83 +170,71 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{}, nil
 }
 
-// triggerRestart adds an annotations to restart pods, this way webhook will take over to add the dns configurations
-func (r *DNSClassReconciler) triggerRestart(ctx context.Context, dnsClass *configv1alpha1.DNSClass) error {
-	logger := log.FromContext(ctx)
-	workloads, err := common.ListWorkloadObjects(ctx, r.Client, dnsClass)
+func (r *DNSClassReconciler) getDNSDomain(ctx context.Context) (string, error) {
+	data, err := common.GetConfigMapData(ctx, r.Client, "kubeadm-config", "ClusterConfiguration")
 	if err != nil {
-		return err
+		return "", err
 	}
-	for _, workload := range workloads {
-		// Pods are not allowed to be restarted or manupulated once deployed in cluster.
-		if workload.Kind == common.PodStr {
-			logger.Info("Pods cannot be restarted because updating pod resources is not supported")
-			continue
-		}
 
-		object, err := common.GetObjectFromKindString(workload.Kind)
-		if err != nil {
-			return err
-		}
-
-		if err = r.Get(ctx, types.NamespacedName{Name: workload.Name, Namespace: workload.Namespace}, object); err != nil {
-			return err
-		}
-
-		currentTime := time.Now().Format("2006-01-02T15:04:05Z")
-		if err = common.UpdateAnnotation(object, common.RestartedAt, currentTime); err != nil {
-			return err
-		}
-		if err = r.Update(ctx, object); err != nil {
-			return err
-		}
+	networking, ok := data["networking"].(map[interface{}]interface{})
+	if !ok {
+		return "", errors.New("networking field is not a map[string]interface{}")
 	}
-	return nil
+
+	dnsDomain, ok := networking["dnsDomain"].(string)
+	if !ok {
+		return "", errors.New("dnsDomain field is not a string")
+	}
+
+	return dnsDomain, nil
 }
 
-// getNameservers finds the clusterDNS information in Cluster
-func (r *DNSClassReconciler) getNameservers(ctx context.Context) ([]string, error) {
-	// Try to get the information from ConfigMap
-	var cm corev1.ConfigMap
-	cmNamespacedName := types.NamespacedName{
-		Name:      "kubelet-config",
-		Namespace: "kube-system",
-	}
-	err := r.Get(ctx, cmNamespacedName, &cm)
+func (r *DNSClassReconciler) getClusterName(ctx context.Context) (string, error) {
+	data, err := common.GetConfigMapData(ctx, r.Client, "kubeadm-config", "ClusterConfiguration")
 	if err != nil {
-		if !apierrors.IsNotFound(err) {
-			return nil, err
-		}
-	}
-	if !reflect.DeepEqual(cm, &corev1.ConfigMap{}) {
-		kubeletData, ok := cm.DeepCopy().Data["kubelet"]
-		if !ok {
-			return nil, errors.New("kubelet-config does not contain `kubelet` key in data")
-		}
-
-		var kubeletConfig map[string]interface{}
-		err := yaml.Unmarshal([]byte(kubeletData), &kubeletConfig)
-		if err != nil {
-			return nil, err
-		}
-
-		clusterDNSInterfaceSlice, ok := kubeletConfig["clusterDNS"].([]interface{})
-		if !ok {
-			return nil, errors.New("clusterDNS field is not a string array")
-		}
-
-		// Convert interface slice to string slice
-		clusterDNSStringSlice := make([]string, len(clusterDNSInterfaceSlice))
-		for i, v := range clusterDNSInterfaceSlice {
-			clusterDNSStringSlice[i] = v.(string)
-		}
-
-		return clusterDNSStringSlice, nil
+		return "", err
 	}
 
-	// TODO: Add more resource for detecting kube-dns IP if needed.
+	clusterName, ok := data["clusterName"].(string)
+	if !ok {
+		return "", errors.New("clusterName field is not a string")
+	}
 
-	return nil, nil
+	return clusterName, nil
+}
+
+func (r *DNSClassReconciler) getClusterDomain(ctx context.Context) (string, error) {
+	data, err := common.GetConfigMapData(ctx, r.Client, "kubelet-config", "kubelet")
+	if err != nil {
+		return "", err
+	}
+
+	clusterDomain, ok := data["clusterDomain"].(string)
+	if !ok {
+		return "", errors.New("clusterDNS field is not a string array")
+	}
+
+	return clusterDomain, nil
+}
+
+func (r *DNSClassReconciler) getNameservers(ctx context.Context) ([]string, error) {
+	data, err := common.GetConfigMapData(ctx, r.Client, "kubelet-config", "kubelet")
+	if err != nil {
+		return nil, err
+	}
+
+	clusterDNSInterfaceSlice, ok := data["clusterDNS"].([]interface{})
+	if !ok {
+		return nil, errors.New("clusterDNS field is not a string array")
+	}
+
+	// Convert interface slice to string slice
+	clusterDNSStringSlice := make([]string, len(clusterDNSInterfaceSlice))
+	for i, v := range clusterDNSInterfaceSlice {
+		clusterDNSStringSlice[i] = v.(string)
+	}
+
+	return clusterDNSStringSlice, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

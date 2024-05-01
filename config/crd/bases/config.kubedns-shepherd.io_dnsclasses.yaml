@@ -61,6 +61,19 @@ spec:
                 items:
                   type: string
                 type: array
+              discoveredFields:
+                properties:
+                  clusterDomain:
+                    type: string
+                  clusterName:
+                    type: string
+                  dnsDomain:
+                    type: string
+                  nameservers:
+                    items:
+                      type: string
+                    type: array
+                type: object
               dnsConfig:
                 description: |-
                   PodDNSConfig defines the DNS parameters of a pod in addition to
@@ -103,8 +116,6 @@ spec:
               dnsPolicy:
                 description: DNSPolicy defines how a pod's DNS will be configured.
                 type: string
-              enablePodRestart:
-                type: boolean
             type: object
           status:
             description: DNSClassStatus defines the observed state of DNSClass

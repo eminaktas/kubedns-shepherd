@@ -17,7 +17,7 @@ spec:
     nameservers:
       - 10.96.0.10
     searches:
-      - svc.cluster.local
+      - "svc.{{ .clusterName }}"
     options:
       - name: ndots
         value: "2"

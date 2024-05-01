@@ -3,7 +3,7 @@ kind: DNSClass
 metadata:
   labels:
     app.kubernetes.io/name: dnsclass
-    app.kubernetes.io/instance: dnsclass-sample
+    app.kubernetes.io/instance: dnsclass-default-sample
     app.kubernetes.io/part-of: kubedns-shepherd
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/created-by: kubedns-shepherd

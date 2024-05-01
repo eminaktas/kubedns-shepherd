@@ -26,9 +26,16 @@ type DNSClassSpec struct {
 	AllowedNamespaces  []string             `json:"allowedNamespaces,omitempty"`
 	DisabledNamespaces []string             `json:"disabledNamespaces,omitempty"`
 	AllowedDNSPolicies []corev1.DNSPolicy   `json:"allowedDNSPolicies,omitempty"`
-	EnablePodRestart   bool                 `json:"enablePodRestart,omitempty"`
 	DNSPolicy          corev1.DNSPolicy     `json:"dnsPolicy,omitempty"`
 	DNSConfig          *corev1.PodDNSConfig `json:"dnsConfig,omitempty"`
+	DiscoveredFields   *DiscoveredFields    `json:"discoveredFields,omitempty"`
+}
+
+type DiscoveredFields struct {
+	Nameservers   []string `json:"nameservers,omitempty"`
+	ClusterDomain string   `json:"clusterDomain,omitempty"`
+	ClusterName   string   `json:"clusterName,omitempty"`
+	DNSDomain     string   `json:"dnsDomain,omitempty"`
 }
 
 // DNSClassStatus defines the observed state of DNSClass

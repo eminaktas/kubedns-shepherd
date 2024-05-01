@@ -24,11 +24,12 @@ import (
 	"slices"
 	"time"
 
-	appsv1 "k8s.io/api/apps/v1"
+	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	configv1alpha1 "github.com/eminaktas/kubedns-shepherd/api/v1alpha1"
@@ -43,22 +44,9 @@ const (
 
 	ReconcilePeriod = 1 * time.Second
 
-	FinalizerString = "config.kubedns-shepherd.io/finalizer"
-
 	// Annotations to be used in resources
 	DNSClassName = "kubedns-shepherd.io/dns-class-name"
 	IsReconciled = "kubedns-shepherd.io/is-reconciled"
-	RestartedAt  = "kubedns-shepherd.io/restartedAt"
-
-	DeploymentStr  = "Deployment"
-	DaemonsetStr   = "DaemonSet"
-	StatefulsetStr = "StatefulSet"
-	ReplicasetStr  = "ReplicaSet"
-	PodStr         = "Pod"
-)
-
-var (
-	errUnkownKind = errors.New("unknown kind")
 )
 
 // Workload used to define objects
@@ -66,6 +54,28 @@ type Workload struct {
 	Name      string
 	Namespace string
 	Kind      string
+}
+
+// GetConfigMapData gets specified data in given ConfigMap from kube-system namespace
+func GetConfigMapData(ctx context.Context, c client.Client, configMapName, keyName string) (map[string]interface{}, error) {
+	cmNamespacedName := types.NamespacedName{Name: configMapName, Namespace: "kube-system"}
+	cm := &corev1.ConfigMap{}
+	if err := c.Get(ctx, cmNamespacedName, cm); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("%s not found in cluster", configMapName)
+		}
+		return nil, err
+	}
+
+	if data, ok := cm.Data[keyName]; ok {
+		config := make(map[string]interface{})
+		if err := yaml.Unmarshal([]byte(data), &config); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal %s config: %w", keyName, err)
+		}
+
+		return config, nil
+	}
+	return nil, fmt.Errorf("%s key not found in %s data", keyName, configMapName)
 }
 
 // GetDNSClass finds the DNSClass for the pod object with its namespace
@@ -99,180 +109,14 @@ func GetDNSClass(ctx context.Context, c client.Client, podNamespace string) (con
 	return dnsClass, nil
 }
 
-// ListWorkloadObjects creates a Workload list for matching resources
-func ListWorkloadObjects(ctx context.Context, c client.Client, dnsClass *configv1alpha1.DNSClass) ([]*Workload, error) {
-	logger := log.FromContext(ctx)
-
-	var (
-		pods      corev1.PodList
-		opts      []client.ListOption
-		workloads []*Workload
-		seen      map[string]struct{} = make(map[string]struct{})
-	)
-
-	allowedNamespaces := dnsClass.Spec.AllowedNamespaces
-	// If allowedNamespaces is empty, add an item to start the for loop
-	if allowedNamespaces == nil {
-		allowedNamespaces = []string{"all"}
-	}
-
-	for _, namespace := range allowedNamespaces {
-		if namespace == "all" {
-			opts = nil
-		} else {
-			opts = []client.ListOption{
-				client.InNamespace(namespace),
-			}
-		}
-
-		err := c.List(ctx, &pods, opts...)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, pod := range pods.Items {
-			if slices.Contains(dnsClass.Spec.DisabledNamespaces, pod.Namespace) {
-				continue
-			}
-			workload, err := getOwnerObject(ctx, c, &pod)
-			if err != nil {
-				logger.Info(fmt.Sprintf("Failed to get owner object for %s/%s. Skipping update for this resource.", pod.Namespace, pod.Name), "error", err)
-				continue
-			}
-			key := fmt.Sprintf("%s-%s-%s", workload.Kind, workload.Namespace, workload.Name)
-			if _, ok := seen[key]; !ok {
-				seen[key] = struct{}{}
-				workloads = append(workloads, workload)
-			}
-		}
-	}
-	return workloads, nil
-}
-
-func getOwnerObject(ctx context.Context, c client.Client, pod *corev1.Pod) (*Workload, error) {
-	for _, owner := range pod.OwnerReferences {
-		if owner.Kind == ReplicasetStr {
-			var rs appsv1.ReplicaSet
-			err := c.Get(ctx, client.ObjectKey{
-				Namespace: pod.Namespace,
-				Name:      owner.Name,
-			}, &rs)
-			if err != nil {
-				return nil, err
-			}
-
-			if rs.OwnerReferences == nil {
-				return &Workload{
-					Name:      owner.Name,
-					Namespace: pod.Namespace,
-					Kind:      owner.Kind,
-				}, nil
-			}
-
-			for _, rsOwner := range rs.OwnerReferences {
-				if rsOwner.Kind == DeploymentStr || rsOwner.Kind == DaemonsetStr || rsOwner.Kind == StatefulsetStr {
-					return &Workload{
-						Name:      rsOwner.Name,
-						Namespace: pod.Namespace,
-						Kind:      rsOwner.Kind,
-					}, nil
-				}
-			}
-		} else if owner.Kind == DaemonsetStr || owner.Kind == DeploymentStr || owner.Kind == StatefulsetStr {
-			return &Workload{
-				Name:      owner.Name,
-				Namespace: pod.Namespace,
-				Kind:      owner.Kind,
-			}, nil
-		} else {
-			return nil, errors.New("unknown owner kind: " + owner.Kind)
-		}
-	}
-
-	return &Workload{
-		Name:      pod.Name,
-		Namespace: pod.Namespace,
-		Kind:      pod.Kind,
-	}, nil
-}
-
-// GetObjectFromKindString converts a string to a Kubernetes object type
-func GetObjectFromKindString(kind string) (client.Object, error) {
-	switch kind {
-	case DeploymentStr:
-		return &appsv1.Deployment{}, nil
-	case StatefulsetStr:
-		return &appsv1.StatefulSet{}, nil
-	case DaemonsetStr:
-		return &appsv1.DaemonSet{}, nil
-	case ReplicasetStr:
-		return &appsv1.ReplicaSet{}, nil
-	case PodStr:
-		return &corev1.Pod{}, nil
-	default:
-		return nil, errUnkownKind
-	}
-}
-
-// RemoveAnnotation removes an annotation from a Kubernetes object
-func RemoveAnnotation(obj client.Object, key string) error {
-	switch o := obj.(type) {
-	case *appsv1.Deployment:
-		delete(o.Spec.Template.Annotations, key)
-		return nil
-	case *appsv1.StatefulSet:
-		delete(o.Spec.Template.Annotations, key)
-		return nil
-	case *appsv1.DaemonSet:
-		delete(o.Spec.Template.Annotations, key)
-		return nil
-	case *appsv1.ReplicaSet:
-		delete(o.Spec.Template.Annotations, key)
-		return nil
-	case *corev1.Pod:
-		delete(o.Annotations, key)
-		return nil
-	default:
-		return errUnkownKind
-	}
-}
-
 // UpdateAnnotation updates or adds an annotation to a Kubernetes object
-func UpdateAnnotation(obj client.Object, key, value string) error {
-	switch o := obj.(type) {
-	case *appsv1.Deployment:
-		if o.Spec.Template.Annotations == nil {
-			o.Spec.Template.Annotations = make(map[string]string)
-		}
-		o.Spec.Template.Annotations[key] = value
-		return nil
-	case *appsv1.StatefulSet:
-		if o.Spec.Template.Annotations == nil {
-			o.Spec.Template.Annotations = make(map[string]string)
-		}
-		o.Spec.Template.Annotations[key] = value
-		return nil
-	case *appsv1.DaemonSet:
-		if o.Spec.Template.Annotations == nil {
-			o.Spec.Template.Annotations = make(map[string]string)
-		}
-		o.Spec.Template.Annotations[key] = value
-		return nil
-	case *appsv1.ReplicaSet:
-		if o.Spec.Template.Annotations == nil {
-			o.Spec.Template.Annotations = make(map[string]string)
-		}
-		o.Spec.Template.Annotations[key] = value
-		return nil
-	case *corev1.Pod:
-		if o.Annotations == nil {
-			o.Annotations = make(map[string]string)
-		}
-		o.Annotations[key] = value
-		return nil
-	default:
-		return errUnkownKind
+func UpdateAnnotation(obj client.Object, key, value string) {
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string)
 	}
+	annotations[key] = value
+	obj.SetAnnotations(annotations)
 }
 
 // DnsClassPredicate is a predicate for DNSClass objects
@@ -295,14 +139,9 @@ func (*DnsClassPredicate) Update(e event.UpdateEvent) bool {
 	return e.ObjectNew.GetGeneration() != e.ObjectOld.GetGeneration()
 }
 
-// Delete always returns true for DNSClass deletion events
+// Delete always returns false for DNSClass deletion events
 func (*DnsClassPredicate) Delete(e event.DeleteEvent) bool {
-	if dnsClass, ok := e.Object.(*configv1alpha1.DNSClass); ok {
-		if !dnsClass.Spec.EnablePodRestart {
-			return false
-		}
-	}
-	return true
+	return false
 }
 
 // Generic always returns false for generic events

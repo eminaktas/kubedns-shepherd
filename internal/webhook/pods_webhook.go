@@ -17,10 +17,12 @@ limitations under the License.
 package webhook_controller
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"text/template"
 
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -93,17 +95,42 @@ func (p *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 }
 
 func (r *PodMutator) configureDNSForPod(pod *corev1.Pod, dnsClass configv1alpha1.DNSClass) error {
-	// Set DNSConfig
 	if dnsClass.Spec.DNSPolicy == corev1.DNSNone {
+		// Update DNSClass for dynamic parameters in searches
+		searches := []string{}
+		parameterMap := map[string]interface{}{
+			"podNamespace":  pod.Namespace,
+			"clusterDomain": dnsClass.Spec.DiscoveredFields.ClusterDomain,
+			"clusterName":   dnsClass.Spec.DiscoveredFields.ClusterName,
+			"dnsDomain":     dnsClass.Spec.DiscoveredFields.DNSDomain,
+		}
+		for _, search := range dnsClass.Spec.DNSConfig.Searches {
+			tmpl, err := template.New("").Parse(search)
+			if err != nil {
+				return err
+			}
+
+			var tplOutput bytes.Buffer
+			// Execute the template with your data
+			err = tmpl.Execute(&tplOutput, parameterMap)
+			if err != nil {
+				return err
+			}
+
+			searches = append(searches, tplOutput.String())
+		}
+		dnsClass.Spec.DNSConfig.Searches = searches
+
 		pod.Spec.DNSConfig = dnsClass.Spec.DNSConfig
+
+		if pod.Spec.DNSConfig.Nameservers == nil {
+			pod.Spec.DNSConfig.Nameservers = dnsClass.Spec.DiscoveredFields.Nameservers
+		}
 	}
 
 	// Set DNSPolicy to None
 	pod.Spec.DNSPolicy = dnsClass.Spec.DNSPolicy
 
-	if err := common.UpdateAnnotation(pod, common.DNSClassName, dnsClass.Name); err != nil {
-		return err
-	}
-
+	common.UpdateAnnotation(pod, common.DNSClassName, dnsClass.Name)
 	return nil
 }

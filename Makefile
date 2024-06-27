@@ -51,7 +51,7 @@ endif
 
 # Set the Operator SDK version to use. By default, what is installed on the system is used.
 # This is useful for CI or a project to utilize a specific version of the operator-sdk toolkit.
-OPERATOR_SDK_VERSION ?= v1.34.1
+OPERATOR_SDK_VERSION ?= v1.35.0
 
 # Image URL to use all building/pushing image targets
 IMG ?= ghcr.io/eminaktas/kubedns-shepherd:latest
@@ -317,3 +317,14 @@ catalog-build: opm ## Build a catalog image.
 .PHONY: catalog-push
 catalog-push: ## Push a catalog image.
 	$(MAKE) docker-push IMG=$(CATALOG_IMG)
+
+# Ref: https://github.com/arttor/helmify?tab=readme-ov-file#integrate-to-your-operator-sdkkubebuilder-project
+HELMIFY ?= $(LOCALBIN)/helmify
+
+.PHONY: helmify
+helmify: $(HELMIFY) ## Download helmify locally if necessary.
+$(HELMIFY): $(LOCALBIN)
+	test -s $(LOCALBIN)/helmify || GOBIN=$(LOCALBIN) go install github.com/arttor/helmify/cmd/helmify@latest
+    
+helm: manifests kustomize helmify
+	$(KUSTOMIZE) build config/default | $(HELMIFY) -cert-manager-as-subchart -cert-manager-version="v1.15.1" -generate-defaults -image-pull-secrets -original-name -preserve-ns

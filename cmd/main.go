@@ -21,6 +21,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	_ "embed"
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -62,10 +63,44 @@ func init() {
 	//+kubebuilder:scaffold:scheme
 }
 
+// LeaderElectionConfiguration defines the configuration of leader election
+// clients for components that can run with leader election enabled.
+type leaderElectionConfiguration struct {
+	// leaderElect enables a leader election client to gain leadership
+	// before executing the main loop. Enable this when running replicated
+	// components for high availability.
+	LeaderElect bool
+	// leaseDuration is the duration that non-leader candidates will wait
+	// after observing a leadership renewal until attempting to acquire
+	// leadership of a led but unrenewed leader slot. This is effectively the
+	// maximum duration that a leader can be stopped before it is replaced
+	// by another candidate. This is only applicable if leader election is
+	// enabled.
+	LeaseDuration time.Duration
+	// renewDeadline is the interval between attempts by the acting master to
+	// renew a leadership slot before it stops leading. This must be less
+	// than or equal to the lease duration. This is only applicable if leader
+	// election is enabled.
+	RenewDeadline time.Duration
+	// retryPeriod is the duration the clients should wait between attempting
+	// acquisition and renewal of a leadership. This is only applicable if
+	// leader election is enabled.
+	RetryPeriod time.Duration
+	// resourceLock indicates the resource object type that will be used to lock
+	// during leader election cycles.
+	ResourceLock string
+	// resourceName indicates the name of resource object that will be used to lock
+	// during leader election cycles.
+	ResourceName string
+	// resourceNamespace indicates the namespace of resource object that will be used to lock
+	// during leader election cycles.
+	ResourceNamespace string
+}
+
 func main() {
 	var printVersion bool
 	var metricsAddr string
-	var enableLeaderElection bool
+	var leaderElection leaderElectionConfiguration
 	var probeAddr string
 	var secureMetrics bool
 	var enableHTTP2 bool
@@ -73,15 +108,39 @@ func main() {
 	flag.BoolVar(&printVersion, "version", false, "Prints the version")
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
-	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
-		"Enable leader election for controller manager. "+
-			"Enabling this will ensure there is only one active controller manager.")
 	flag.BoolVar(&secureMetrics, "metrics-secure", false,
 		"If set the metrics endpoint is served securely")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	flag.IntVar(&maxConcurrentReconcilesForDNSClassReconciler, "max-concurrent-reconciles-for-dnsclass-reconciler", 2,
 		"Specifies the maximum number of concurrent reconciles for the DNSClass reconciler.")
+	flag.BoolVar(&leaderElection.LeaderElect, "leader-elect", false, ""+
+		"Start a leader election client and gain leadership before "+
+		"executing the main loop. Enable this when running replicated "+
+		"components for high availability.")
+	flag.StringVar(&leaderElection.ResourceLock, "leader-elect-resource-lock", "leases", ""+
+		"The type of resource object that is used for locking during "+
+		"leader election. Supported options are 'leases', 'endpointsleases' "+
+		"and 'configmapsleases'.")
+	flag.StringVar(&leaderElection.ResourceNamespace, "leader-elect-resource-namespace", "", ""+
+		"The namespace of resource object that is used for locking during "+
+		"leader election.")
+	flag.StringVar(&leaderElection.ResourceName, "leader-elect-resource-name", "kubedns-shepherd.io", ""+
+		"The name of resource object that is used for locking during "+
+		"leader election.")
+	flag.DurationVar(&leaderElection.LeaseDuration, "leader-elect-lease-duration", 15*time.Second, ""+
+		"The duration that non-leader candidates will wait after observing a leadership "+
+		"renewal until attempting to acquire leadership of a led but unrenewed leader "+
+		"slot. This is effectively the maximum duration that a leader can be stopped "+
+		"before it is replaced by another candidate. This is only applicable if leader "+
+		"election is enabled.")
+	flag.DurationVar(&leaderElection.RenewDeadline, "leader-elect-renew-deadline", 10*time.Second, ""+
+		"The interval between attempts by the acting master to renew a leadership slot "+
+		"before it stops leading. This must be less than the lease duration. "+
+		"This is only applicable if leader election is enabled.")
+	flag.DurationVar(&leaderElection.RetryPeriod, "leader-elect-retry-period", 2*time.Second, ""+
+		"The duration the clients should wait between attempting acquisition and renewal "+
+		"of a leadership. This is only applicable if leader election is enabled.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -123,21 +182,15 @@ func main() {
 			SecureServing: secureMetrics,
 			TLSOpts:       tlsOpts,
 		},
-		WebhookServer:          webhookServer,
-		HealthProbeBindAddress: probeAddr,
-		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "bafd584e.kubedns-shepherd.io",
-		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
-		// when the Manager ends. This requires the binary to immediately end when the
-		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
-		// speeds up voluntary leader transitions as the new leader don't have to wait
-		// LeaseDuration time first.
-		//
-		// In the default scaffold provided, the program ends immediately after
-		// the manager stops, so would be fine to enable this option. However,
-		// if you are doing or is intended to do any operation such as perform cleanups
-		// after the manager stops then its usage might be unsafe.
-		// LeaderElectionReleaseOnCancel: true,
+		WebhookServer:              webhookServer,
+		HealthProbeBindAddress:     probeAddr,
+		LeaderElection:             leaderElection.LeaderElect,
+		LeaderElectionResourceLock: leaderElection.ResourceLock,
+		LeaderElectionNamespace:    leaderElection.ResourceNamespace,
+		LeaderElectionID:           leaderElection.ResourceName,
+		LeaseDuration:              &leaderElection.LeaseDuration,
+		RenewDeadline:              &leaderElection.RenewDeadline,
+		RetryPeriod:                &leaderElection.RetryPeriod,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")

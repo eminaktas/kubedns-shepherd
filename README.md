@@ -9,7 +9,9 @@ KubeDNS Shepherd is a Kubernetes controller that manages the DNS configuration o
 **Deploy the KubeDNS Shepherd to the cluster:**
 
 ```sh
-helm install kubedns-shepherd https://eminaktas.github.io/kubedns-shepherd
+helm repo add kubedns-shepherd https://eminaktas.github.io/kubedns-shepherd/
+helm repo update
+helm install kubedns-shepherd kubedns-shepherd/kubedns-shepherd --namespace kubedns-shepherd-system --create-namespace
 ```
 
 > **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin privileges or be logged in as admin.
@@ -30,7 +32,7 @@ kubectl delete -k config/samples/
 **Uninstall the KubeDNS Shepherd from the cluster:**
 
 ```sh
-helm uninstall kubedns-shepherd
+helm uninstall kubedns-shepherd --namespace kubedns-shepherd-system
 ```
 
 ## Configuration

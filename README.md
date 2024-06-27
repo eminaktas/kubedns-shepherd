@@ -1,24 +1,23 @@
 # KubeDNS Shepherd
 
-KubeDNS Shepherd is a Kubernetes controller that manages the DNS configuration of workloads, ensuring efficient and reliable way to configure DNS within your Kubernetes cluster.
+KubeDNS Shepherd is a Kubernetes controller that manages the DNS configuration of workloads, ensuring an efficient and reliable way to configure DNS within your Kubernetes cluster.
 
 ## Getting Started
 
-### To Deploy on the cluster
+### To Deploy on the Cluster
 
 **Deploy the KubeDNS Shepherd to the cluster:**
 
 ```sh
-make deploy
+helm install kubedns-shepherd https://eminaktas.github.io/kubedns-shepherd
 ```
 
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
-privileges or be logged in as admin.
+> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin privileges or be logged in as admin.
 
 **Create instances of your solution**
 You can apply any example from the config/sample:
 
->**NOTE**: Ensure that the samples has default values to test it out.
+>**NOTE**: Ensure that the samples have default values to test them out.
 
 ### To Uninstall
 
@@ -28,16 +27,10 @@ You can apply any example from the config/sample:
 kubectl delete -k config/samples/
 ```
 
-**Delete the APIs(CRDs) from the cluster:**
+**Uninstall the KubeDNS Shepherd from the cluster:**
 
 ```sh
-make uninstall
-```
-
-**UnDeploy the controller from the cluster:**
-
-```sh
-make undeploy
+helm uninstall kubedns-shepherd
 ```
 
 ## Configuration
@@ -80,28 +73,30 @@ KubeDNS Shepherd supports dynamic parameters. Here are the supported keys, which
 
 - `.podNamespace`: Adds the configured pod's namespace.
 - `.clusterDomain`: Adds the discovered cluster domain from the `kubelet-config` ConfigMap.
-- `.dnsDomain`: Adds the discovered dns domain from the `kubeadm-config` ConfigMap.
+- `.dnsDomain`: Adds the discovered DNS domain from the `kubeadm-config` ConfigMap.
 - `.clusterName`: Adds the discovered cluster name from the `kubeadm-config` ConfigMap.
 
-nameservers can also be configured if it is not defined by users in the `DNSClass`. It will extract the value from `kubelet-config` ConfigMap.
+Nameservers can also be configured if they are not defined by users in the `DNSClass`. It will extract the value from the `kubelet-config` ConfigMap.
 
-**Note:** It may fail to discover these parameters if the resources does not exists in your cluster. You can ignore if you don't use dynamic configuration.
+**Note:** It may fail to discover these parameters if the resources do not exist in your cluster. You can ignore them if you don't use dynamic configuration.
 
 ## Use Cases
 
 ### Improved DNS Resolution
+
 - **Issue**: DNS resolutions in some services were failing intermittently.
-- **Solution**: Optimize the environment by using this controller to adjust `ndots` and/or `searches` option for pods or add a dot `.` at the end of the FQDN.
+- **Solution**: Optimize the environment by using this controller to adjust `ndots` and/or `searches` options for pods or add a dot `.` at the end of the FQDN.
 
 ### DNS Query Optimization
+
 - **Issue**: Kubernetes Pods experienced failures in DNS queries for the first attempts due to the `ndots` option set to 5 in `resolv.conf`.
-- **Solution**: Optimize the environment by using this controller to adjust `ndots` and `searches` option in `resolv.conf`.
+- **Solution**: Optimize the environment by using this controller to adjust `ndots` and `searches` options in `resolv.conf`.
 
 ## Contributing
 
 Please read our [Contributing Guidelines](CONTRIBUTING.md) before contributing.
 
-More information can be found at our [Development Guide](DEVELOPMENT.md)
+More information can be found in our [Development Guide](DEVELOPMENT.md).
 
 ## Code of Conduct
 

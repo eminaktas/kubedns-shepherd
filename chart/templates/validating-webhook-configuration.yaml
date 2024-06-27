@@ -1,0 +1,29 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "chart.fullname" . }}-validating-webhook-configuration
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "chart.fullname" . }}-serving-cert
+  labels:
+  {{- include "chart.labels" . | nindent 4 }}
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: {{ include "chart.fullname" . }}-webhook-service
+      namespace: {{ .Release.Namespace }}
+      path: /validate-config-kubedns-shepherd-io-v1alpha1-dnsclass
+  failurePolicy: Fail
+  name: vdnsclass.kb.io
+  rules:
+  - apiGroups:
+    - config.kubedns-shepherd.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - dnsclasses
+  sideEffects: None

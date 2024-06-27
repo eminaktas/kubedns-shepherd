@@ -1,0 +1,50 @@
+replicas: 3
+
+crds:
+  enabled: true
+  keep: true
+
+# Specifies whether Leader Election resources should be created
+leaderElection:
+ enabled: true
+#  leaseDuration: 15s
+#  renewDeadline: 10s
+#  retryPeriod: 2s
+#  resourceLock: "leases"
+#  resourceName: "kubedns-shepherd.io"
+
+extraArgs: []
+# --key1=val1
+# --key2
+
+image:
+  repository: ghcr.io/eminaktas/kubedns-shepherd
+  tag: ""
+
+serviceMonitor:
+  enabled: false
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
+
+serviceAccount:
+  annotations: {}
+
+imagePullSecrets: []
+
+certmanager:
+  enabled: false
+  crds:
+    enabled: false
+    keep: true

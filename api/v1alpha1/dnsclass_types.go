@@ -28,7 +28,6 @@ type DNSClassSpec struct {
 	AllowedDNSPolicies []corev1.DNSPolicy   `json:"allowedDNSPolicies,omitempty"`
 	DNSPolicy          corev1.DNSPolicy     `json:"dnsPolicy,omitempty"`
 	DNSConfig          *corev1.PodDNSConfig `json:"dnsConfig,omitempty"`
-	DiscoveredFields   *DiscoveredFields    `json:"discoveredFields,omitempty"`
 }
 
 type DiscoveredFields struct {
@@ -41,13 +40,17 @@ type DiscoveredFields struct {
 // DNSClassStatus defines the observed state of DNSClass
 type DNSClassStatus struct {
 	// +operator-sdk:csv:customresourcedefinitions:type=status
-	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
+	Conditions       []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
+	DiscoveredFields *DiscoveredFields  `json:"discoveredFields,omitempty"`
 }
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
 //+kubebuilder:resource:scope=Cluster,shortName="dc"
 //+kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[*].status"
+//+kubebuilder:printcolumn:name="ClusterName",type="string",JSONPath=".status.discoveredFields.clusterName"
+//+kubebuilder:printcolumn:name="ClusterDomain",type="string",JSONPath=".status.discoveredFields.clusterDomain"
+//+kubebuilder:printcolumn:name="DNSDomain",type="string",JSONPath=".status.discoveredFields.dnsDomain"
 //+kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // DNSClass is the Schema for the dnsclasses API

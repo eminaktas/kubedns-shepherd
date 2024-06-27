@@ -98,8 +98,8 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if dnsClass.Spec.DNSPolicy == corev1.DNSNone {
 		undiscoveredField := []string{}
 		discoveredFields := &configv1alpha1.DiscoveredFields{}
-		if dnsClass.Spec.DiscoveredFields != nil {
-			discoveredFields = dnsClass.Spec.DiscoveredFields
+		if dnsClass.Status.DiscoveredFields != nil {
+			discoveredFields = dnsClass.Status.DiscoveredFields
 		}
 		discoveredFields.Nameservers, err = r.getNameservers(ctx)
 		if err != nil {
@@ -136,10 +136,10 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			}
 		}
 
-		if !reflect.DeepEqual(discoveredFields, dnsClass.Spec.DiscoveredFields) {
-			dnsClass.Spec.DiscoveredFields = discoveredFields
+		if !reflect.DeepEqual(discoveredFields, dnsClass.Status.DiscoveredFields) {
+			dnsClass.Status.DiscoveredFields = discoveredFields
 
-			if err := r.Update(ctx, dnsClass); err != nil {
+			if err := r.Status().Update(ctx, dnsClass); err != nil {
 				logger.Error(err, "Failed to update DNSClass to add discovered fields")
 				return ctrl.Result{}, err
 			}

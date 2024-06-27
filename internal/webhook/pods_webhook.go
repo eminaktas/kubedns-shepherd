@@ -100,9 +100,9 @@ func (r *PodMutator) configureDNSForPod(pod *corev1.Pod, dnsClass configv1alpha1
 		searches := []string{}
 		parameterMap := map[string]interface{}{
 			"podNamespace":  pod.Namespace,
-			"clusterDomain": dnsClass.Spec.DiscoveredFields.ClusterDomain,
-			"clusterName":   dnsClass.Spec.DiscoveredFields.ClusterName,
-			"dnsDomain":     dnsClass.Spec.DiscoveredFields.DNSDomain,
+			"clusterDomain": dnsClass.Status.DiscoveredFields.ClusterDomain,
+			"clusterName":   dnsClass.Status.DiscoveredFields.ClusterName,
+			"dnsDomain":     dnsClass.Status.DiscoveredFields.DNSDomain,
 		}
 		for _, search := range dnsClass.Spec.DNSConfig.Searches {
 			tmpl, err := template.New("").Parse(search)
@@ -124,7 +124,7 @@ func (r *PodMutator) configureDNSForPod(pod *corev1.Pod, dnsClass configv1alpha1
 		pod.Spec.DNSConfig = dnsClass.Spec.DNSConfig
 
 		if pod.Spec.DNSConfig.Nameservers == nil {
-			pod.Spec.DNSConfig.Nameservers = dnsClass.Spec.DiscoveredFields.Nameservers
+			pod.Spec.DNSConfig.Nameservers = dnsClass.Status.DiscoveredFields.Nameservers
 		}
 	}
 

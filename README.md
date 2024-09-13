@@ -1,6 +1,9 @@
 # KubeDNS Shepherd
 
-[![Coverage Status](https://coveralls.io/repos/github/eminaktas/kubedns-shepherd/badge.svg?branch=main)](https://coveralls.io/github/eminaktas/kubedns-shepherd?branch=main) [![Release](https://github.com/eminaktas/kubedns-shepherd/actions/workflows/release.yaml/badge.svg)](https://github.com/eminaktas/kubedns-shepherd/actions/workflows/release.yaml) [![Unit test](https://github.com/eminaktas/kubedns-shepherd/actions/workflows/unit-tests.yaml/badge.svg?branch=main)](https://github.com/eminaktas/kubedns-shepherd/actions/workflows/unit-tests.yaml) [![Lint](https://github.com/eminaktas/kubedns-shepherd/actions/workflows/lint.yaml/badge.svg?branch=main)](https://github.com/eminaktas/kubedns-shepherd/actions/workflows/lint.yaml)
+[![Coverage Status](https://coveralls.io/repos/github/eminaktas/kubedns-shepherd/badge.svg?branch=main)](https://coveralls.io/github/eminaktas/kubedns-shepherd?branch=main)
+[![Release](https://github.com/eminaktas/kubedns-shepherd/actions/workflows/release.yaml/badge.svg)](https://github.com/eminaktas/kubedns-shepherd/actions/workflows/release.yaml)
+[![Unit test](https://github.com/eminaktas/kubedns-shepherd/actions/workflows/unit-tests.yaml/badge.svg?branch=main)](https://github.com/eminaktas/kubedns-shepherd/actions/workflows/unit-tests.yaml)
+[![Lint](https://github.com/eminaktas/kubedns-shepherd/actions/workflows/lint.yaml/badge.svg?branch=main)](https://github.com/eminaktas/kubedns-shepherd/actions/workflows/lint.yaml)
 
 KubeDNS Shepherd is a Kubernetes controller that manages the DNS configuration of workloads, ensuring an efficient and reliable way to configure DNS within your Kubernetes cluster. This project is essential for those looking to optimize DNS resolutions and configurations within their Kubernetes environments.
 

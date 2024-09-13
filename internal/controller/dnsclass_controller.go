@@ -86,7 +86,7 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// Set the status as Unknown when no status are available
-	if dnsClass.Status.Conditions == nil || len(dnsClass.Status.Conditions) == 0 {
+	if len(dnsClass.Status.Conditions) == 0 {
 		meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: common.TypeAvailable, Status: metav1.ConditionUnknown, Reason: "Reconciling", Message: "Starting reconciliation"})
 		if err = r.Status().Update(ctx, dnsClass); err != nil {
 			logger.Error(err, "Failed to update DNSClass to add the status")

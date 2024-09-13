@@ -19,6 +19,8 @@ builds:
     goarch:
       - amd64
       - arm64
+      - s390x
+      - ppc64le
     mod_timestamp: '{{ .CommitTimestamp }}'
 
 kos:
@@ -36,9 +38,11 @@ kos:
     platforms:
       - linux/amd64
       - linux/arm64
+      - linux/s390x
+      - linux/ppc64le
     labels:
       io.artifacthub.package.readme-url: "https://raw.githubusercontent.com/eminaktas/kubedns-shepherd/main/README.md"
-      io.artifacthub.package.maintainers: '[{"name":"Emin Aktas","email":""}]'
+      io.artifacthub.package.maintainers: '[{"name":"Emin Aktas","email":"eminaktas34@gmail.com"}]'
       io.artifacthub.package.license: "Apache-2.0"
       org.opencontainers.image.description: "A Kubernetes controller that manages the DNS configuration for workloads"
       org.opencontainers.image.created: "{{ .Date }}"

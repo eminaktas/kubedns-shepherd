@@ -50,7 +50,7 @@ func (p *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 
 	podName := pod.GetName()
 	if pod.Name == "" {
-		podName = pod.GetGenerateName() + "*"
+		podName = fmt.Sprintf("%s... (name pending generation)", pod.GetGenerateName())
 	}
 
 	var dnsClass configv1alpha1.DNSClass

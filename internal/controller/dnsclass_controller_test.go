@@ -23,299 +23,198 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	configv1alpha1 "github.com/eminaktas/kubedns-shepherd/api/v1alpha1"
 	"github.com/eminaktas/kubedns-shepherd/internal/common"
 	"github.com/eminaktas/kubedns-shepherd/test/utils"
+	utilptr "k8s.io/utils/ptr"
 )
 
 var _ = Describe("DNSClass Controller", Ordered, func() {
-	const (
-		timeout       = time.Second * 10
-		interval      = time.Millisecond * 250
-		dnsclassName  = "test-dnsclass"
-		clusterDomain = "cluster.local"
-		clusterDNS    = "10.96.0.10"
-		clusterName   = "test-cluster"
-		kubeadmName   = "kubeadm-config"
-		kubeletName   = "kubelet-config"
-	)
-	var (
-		ctx                    = context.Background()
-		dnsclassNamespacedName = types.NamespacedName{
-			Name: dnsclassName,
-		}
-		kubeadmNamespacedName = types.NamespacedName{
-			Name:      kubeadmName,
-			Namespace: metav1.NamespaceSystem,
-		}
-		kubeletNamespacedName = types.NamespacedName{
-			Name:      kubeletName,
-			Namespace: metav1.NamespaceSystem,
-		}
-		kubeadmConfig = fmt.Sprintf(`
-apiVersion: kubeadm.k8s.io/v1beta3
-clusterName: %s
-kind: ClusterConfiguration
-kubernetesVersion: v1.30.0
-networking:
-  dnsDomain: %s
-`, clusterName, clusterDomain)
-		kubeletConfig = fmt.Sprintf(`
-apiVersion: kubelet.config.k8s.io/v1beta1
-clusterDNS:
-- %s
-clusterDomain: %s
-kind: KubeletConfiguration
-`, clusterDNS, clusterDomain)
-		allowedNamespaces        = []string{"default"}
-		updatedallowedNamespaces = []string{"default", "another-namespace"}
-		disabledNamespaces       = []string{"kube-system"}
-		allowedDNSPolicies       = []corev1.DNSPolicy{corev1.DNSNone, corev1.DNSClusterFirst, corev1.DNSClusterFirstWithHostNet}
-		nameservers              = []string{clusterDNS}
-		searches                 = []string{fmt.Sprintf("svc.%s", clusterDomain), clusterDomain}
-	)
-	Context("When creating, reconciling and removing a DNSClass", func() {
+	const timeout = time.Second * 10
+	const interval = time.Millisecond * 250
+
+	// Each test uses different DNSClass
+	var dnsclass *configv1alpha1.DNSClass
+
+	Context("When creating, updating, reconciling and removing a DNSClass", func() {
+		ctx := context.Background()
 		BeforeAll(func() {
+			// Create prerequisite ConfigMaps required for DNSClass.
 			By("Create kubeadm-config")
-			kubeadmcm := &corev1.ConfigMap{}
-			err := k8sClient.Get(ctx, kubeadmNamespacedName, kubeadmcm)
-			if err != nil && errors.IsNotFound(err) {
-				kubeadmcm := &corev1.ConfigMap{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      kubeadmName,
-						Namespace: metav1.NamespaceSystem,
-					},
-					Data: map[string]string{
-						"ClusterConfiguration": kubeadmConfig,
-					},
-				}
-				Expect(k8sClient.Create(ctx, kubeadmcm)).To(Succeed())
-			}
+			Expect(utils.CreateKubeADMConfigMap(ctx, k8sClient)).Should(Succeed())
 			By("Create kubelet-config")
-			kubeletcm := &corev1.ConfigMap{}
-			err = k8sClient.Get(ctx, kubeletNamespacedName, kubeletcm)
-			if err != nil && errors.IsNotFound(err) {
-				kubeletcm := &corev1.ConfigMap{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      kubeletName,
-						Namespace: metav1.NamespaceSystem,
-					},
-					Data: map[string]string{
-						"kubelet": kubeletConfig,
-					},
-				}
-				Expect(k8sClient.Create(ctx, kubeletcm)).To(Succeed())
-			}
+			Expect(utils.CreateKubeletConfigMap(ctx, k8sClient)).Should(Succeed())
 		})
 
-		AfterEach(func() {
-			dnsclass := &configv1alpha1.DNSClass{}
-			err := k8sClient.Get(ctx, dnsclassNamespacedName, dnsclass)
-			Expect(err).NotTo(HaveOccurred())
+		// Remove ConfigMaps created for DNSClass.
+		AfterAll(func() {
+			By("Delete kubelet-config")
+			Expect(utils.DeleteKubeletConfigMap(ctx, k8sClient)).Should(Succeed())
+			By("Delete kubeadm-config")
+			Expect(utils.DeleteKubeADMConfigMap(ctx, k8sClient)).Should(Succeed())
+		})
 
-			By("Cleanup the DNSClass instance")
-			Expect(k8sClient.Delete(ctx, dnsclass)).To(Succeed())
+		// Remove the DNSClass instance.
+		AfterEach(func() {
+			By(fmt.Sprintf("Cleanup the DNSClass(%s) instance", dnsclass.Name))
+			Expect(utils.DeleteDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
+			Eventually(func(g Gomega) {
+				err := utils.GetDNSClass(ctx, k8sClient, dnsclass)
+				g.Expect(apierrors.IsNotFound(err)).Should(Equal(true))
+			}, timeout, interval).Should(Succeed())
+			dnsclass = &configv1alpha1.DNSClass{}
 		})
 
 		It("should see DNSClass is created and validated specs", func() {
 			By("Create a DNSClass")
-			dnsConfig := &corev1.PodDNSConfig{
-				Nameservers: nameservers,
-				Searches:    searches,
+			dnsconfig := &corev1.PodDNSConfig{
+				Nameservers: []string{utils.ClusterDNS},
+				Searches:    []string{fmt.Sprintf("svc.%s", utils.ClusterDomain), utils.ClusterDomain},
 				Options: []corev1.PodDNSConfigOption{
-					{Name: "ndots", Value: utils.StringPtr("2")},
+					{Name: "ndots", Value: utilptr.To("2")},
 					{Name: "edns0"},
 				},
 			}
-			dnsclass := &configv1alpha1.DNSClass{}
-			err := k8sClient.Get(ctx, dnsclassNamespacedName, dnsclass)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &configv1alpha1.DNSClass{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: dnsclassName,
-					},
-					Spec: configv1alpha1.DNSClassSpec{
-						DNSConfig:          dnsConfig,
-						DNSPolicy:          corev1.DNSNone,
-						AllowedNamespaces:  allowedNamespaces,
-						DisabledNamespaces: disabledNamespaces,
-						AllowedDNSPolicies: allowedDNSPolicies,
-					},
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-			}
-			By("Get the created DNSClass")
-			checkDNSclass := &configv1alpha1.DNSClass{}
-			Expect(k8sClient.Get(ctx, dnsclassNamespacedName, checkDNSclass)).To(Succeed())
-			By("Check the Spec field in the DNSClass")
 			dnsclassSpec := configv1alpha1.DNSClassSpec{
-				DNSConfig:          dnsConfig,
+				DNSConfig:          dnsconfig,
 				DNSPolicy:          corev1.DNSNone,
-				AllowedNamespaces:  allowedNamespaces,
-				DisabledNamespaces: disabledNamespaces,
-				AllowedDNSPolicies: allowedDNSPolicies,
+				AllowedNamespaces:  []string{"default"},
+				DisabledNamespaces: []string{"kube-system"},
+				AllowedDNSPolicies: []corev1.DNSPolicy{corev1.DNSNone, corev1.DNSClusterFirst, corev1.DNSClusterFirstWithHostNet},
 			}
-			Expect(checkDNSclass.Spec).To(Equal(dnsclassSpec))
+			dnsclass = &configv1alpha1.DNSClass{
+				Spec: dnsclassSpec,
+			}
+			Expect(utils.CreateDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
+			// Sync and validate the created DNSClass object.
+			By(fmt.Sprintf("Sync the DNSClass(%s) object", dnsclass.Name))
+			Expect(utils.GetDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
+			By("Check the Spec fields")
+			Expect(dnsclass.Spec).Should(Equal(dnsclassSpec))
 		})
 
 		It("should see discovered fields is populated in DNSClass", func() {
 			By("Create a DNSClass")
-			dnsclass := &configv1alpha1.DNSClass{}
-			err := k8sClient.Get(ctx, dnsclassNamespacedName, dnsclass)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &configv1alpha1.DNSClass{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: dnsclassName,
-					},
-					Spec: configv1alpha1.DNSClassSpec{
-						DNSConfig:          &corev1.PodDNSConfig{},
-						DNSPolicy:          corev1.DNSNone,
-						AllowedNamespaces:  allowedNamespaces,
-						DisabledNamespaces: disabledNamespaces,
-						AllowedDNSPolicies: allowedDNSPolicies,
-					},
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+			dnsclass = &configv1alpha1.DNSClass{
+				Spec: configv1alpha1.DNSClassSpec{
+					DNSPolicy: corev1.DNSNone,
+				},
 			}
-			By("Get the DNSClass")
-			checkDNSclass := &configv1alpha1.DNSClass{}
-			err = k8sClient.Get(ctx, dnsclassNamespacedName, checkDNSclass)
-			Expect(err).NotTo(HaveOccurred())
-			// We must wait until the DNSClass reconciled.
+			Expect(utils.CreateDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
+			By(fmt.Sprintf("Sync the DNSClass(%s) object", dnsclass.Name))
+			Expect(utils.GetDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
+			// Continuously check for the `kubedns-shepherd.io/is-reconciled` annotation to be "true".
 			Eventually(func(g Gomega) {
-				g.Expect(k8sClient.Get(ctx, dnsclassNamespacedName, checkDNSclass)).To(Succeed())
-				g.Expect(checkDNSclass.GetAnnotations()[common.IsReconciled]).To(Equal("true"))
+				g.Expect(utils.GetDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
+				g.Expect(dnsclass.GetAnnotations()[common.IsReconciled]).Should(Equal("true"))
 			}, timeout, interval).Should(Succeed())
+			// Validate that the discovered fields are populated as expected.
 			By("Check discovered fields")
 			expectedDiscoveredField := &configv1alpha1.DiscoveredFields{
-				Nameservers:   nameservers,
-				ClusterDomain: clusterDomain,
-				ClusterName:   clusterName,
-				DNSDomain:     clusterDomain,
+				Nameservers:   []string{utils.ClusterDNS},
+				ClusterDomain: utils.ClusterDomain,
+				ClusterName:   utils.ClusterName,
+				DNSDomain:     utils.ClusterDomain,
 			}
-			Expect(checkDNSclass.Status.DiscoveredFields).To(Equal(expectedDiscoveredField))
+			Expect(dnsclass.Status.DiscoveredFields).Should(Equal(expectedDiscoveredField))
 		})
 
 		It("should create a DNSClass with dnsPolicy `Default` and discovered fields musn't populated", func() {
 			By("Create a DNSClass")
-			dnsclass := &configv1alpha1.DNSClass{}
-			err := k8sClient.Get(ctx, dnsclassNamespacedName, dnsclass)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &configv1alpha1.DNSClass{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: dnsclassName,
-					},
-					Spec: configv1alpha1.DNSClassSpec{
-						DNSPolicy:          corev1.DNSDefault,
-						AllowedNamespaces:  allowedNamespaces,
-						DisabledNamespaces: disabledNamespaces,
-					},
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-				By("Get the DNSClass")
-				checkDNSclass := &configv1alpha1.DNSClass{}
-				err = k8sClient.Get(ctx, dnsclassNamespacedName, checkDNSclass)
-				Expect(err).NotTo(HaveOccurred())
-				By("Check discovered fields and DNS Policy")
-				Expect(checkDNSclass.Spec.DNSPolicy).To(Equal(corev1.DNSDefault))
-				var discoveredFields *configv1alpha1.DiscoveredFields
-				Expect(checkDNSclass.Status.DiscoveredFields).To(Equal(discoveredFields))
+			dnsclass = &configv1alpha1.DNSClass{
+				Spec: configv1alpha1.DNSClassSpec{
+					DNSPolicy: corev1.DNSDefault,
+				},
 			}
+			Expect(utils.CreateDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
+			// Check the discovered fields and DNS Policy
+			By(fmt.Sprintf("Sync the DNSClass(%s) object", dnsclass.Name))
+			Expect(utils.GetDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
+			By("Check discovered fields and DNS Policy")
+			Expect(dnsclass.Spec.DNSPolicy).Should(Equal(corev1.DNSDefault))
+			// Validate that discovered fields are empty.
+			var discoveredFields *configv1alpha1.DiscoveredFields
+			Expect(dnsclass.Status.DiscoveredFields).Should(Equal(discoveredFields))
 		})
 
 		It("should update DNSClass", func() {
 			By("Create a DNSClass")
-			dnsConfig := &corev1.PodDNSConfig{
-				Nameservers: nameservers,
-				Searches:    searches,
+			dnsconfig := &corev1.PodDNSConfig{
+				Nameservers: []string{utils.ClusterDNS},
+				Searches:    []string{fmt.Sprintf("svc.%s", utils.ClusterDomain), utils.ClusterDomain},
 				Options: []corev1.PodDNSConfigOption{
-					{Name: "ndots", Value: utils.StringPtr("2")},
+					{Name: "ndots", Value: utilptr.To("2")},
 					{Name: "edns0"},
 				},
 			}
-			dnsclass := &configv1alpha1.DNSClass{}
-			err := k8sClient.Get(ctx, dnsclassNamespacedName, dnsclass)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &configv1alpha1.DNSClass{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: dnsclassName,
-					},
-					Spec: configv1alpha1.DNSClassSpec{
-						DNSConfig:          dnsConfig,
-						DNSPolicy:          corev1.DNSNone,
-						AllowedNamespaces:  allowedNamespaces,
-						DisabledNamespaces: disabledNamespaces,
-						AllowedDNSPolicies: allowedDNSPolicies,
-					},
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+			dnsclassSpec := configv1alpha1.DNSClassSpec{
+				DNSConfig:          dnsconfig,
+				DNSPolicy:          corev1.DNSNone,
+				AllowedNamespaces:  []string{"default"},
+				DisabledNamespaces: []string{"kube-system"},
+				AllowedDNSPolicies: []corev1.DNSPolicy{corev1.DNSNone, corev1.DNSClusterFirst, corev1.DNSClusterFirstWithHostNet},
 			}
-			By("Get the DNSClass")
-			checkDNSclass := &configv1alpha1.DNSClass{}
-			// We should keep loking for kubedns-shepherd.io/is-reconciled as true
-			// Otherwise, when resource is updated the test will fail
+			dnsclass = &configv1alpha1.DNSClass{
+				Spec: dnsclassSpec,
+			}
+			Expect(utils.CreateDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
+
+			By(fmt.Sprintf("Sync the DNSClass(%s) object", dnsclass.Name))
 			Eventually(func(g Gomega) {
-				g.Expect(k8sClient.Get(ctx, dnsclassNamespacedName, checkDNSclass)).To(Succeed())
-				g.Expect(checkDNSclass.GetAnnotations()[common.IsReconciled]).To(Equal("true"))
+				g.Expect(utils.GetDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
+				g.Expect(dnsclass.GetAnnotations()[common.IsReconciled]).Should(Equal("true"))
 			}, timeout, interval).Should(Succeed())
-			By("Update DNSClass")
-			checkDNSclass.Spec.AllowedNamespaces = updatedallowedNamespaces
-			Expect(k8sClient.Update(ctx, checkDNSclass)).To(Succeed())
-			By("Get the updated DNSClass")
-			checkDNSclassv2 := &configv1alpha1.DNSClass{}
-			Expect(k8sClient.Get(ctx, dnsclassNamespacedName, checkDNSclassv2)).To(Succeed())
-			Expect(checkDNSclassv2.Spec.AllowedNamespaces).To(Equal(updatedallowedNamespaces))
+			By(fmt.Sprintf("Update DNSClass(%s)", dnsclass.Name))
+			updatedAllowedNamespaces := []string{"default", "another-namespace"}
+			// Re-fetch the DNSClass object before update
+			time.Sleep(1 * time.Second)
+			Expect(utils.GetDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
+			dnsclass.Spec.AllowedNamespaces = updatedAllowedNamespaces
+			Expect(k8sClient.Update(ctx, dnsclass)).Should(Succeed())
+			By(fmt.Sprintf("Get the updated DNSClass(%s)", dnsclass.Name))
+			Expect(utils.GetDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
+			Expect(dnsclass.Spec.AllowedNamespaces).Should(Equal(updatedAllowedNamespaces))
 		})
 
-		// Please keep this last test unless you need kubelet-config and kubeadm-config resources.
+		// This test ensures the DNSClass fails to discover fields when the required ConfigMaps are removed.
+		// It's important to keep this as the last test since it deletes the ConfigMaps.
 		It("should fail to discover nameservers, cluster domain, cluster name and dns domain", func() {
-			By("Remove kubelet-config")
-			kubeletcm := &corev1.ConfigMap{}
-			err := k8sClient.Get(ctx, kubeletNamespacedName, kubeletcm)
-			Expect(err).NotTo(HaveOccurred())
-
-			Expect(k8sClient.Delete(ctx, kubeletcm)).To(Succeed())
-
 			By("Remove kubeadm-config")
-			kubeadmcm := &corev1.ConfigMap{}
-			err = k8sClient.Get(ctx, kubeadmNamespacedName, kubeadmcm)
-			Expect(err).NotTo(HaveOccurred())
-
-			Expect(k8sClient.Delete(ctx, kubeadmcm)).To(Succeed())
-
-			By("Create a DNSClass")
-			dnsclass := &configv1alpha1.DNSClass{}
-			err = k8sClient.Get(ctx, dnsclassNamespacedName, dnsclass)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &configv1alpha1.DNSClass{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: dnsclassName,
-					},
-					Spec: configv1alpha1.DNSClassSpec{
-						DNSConfig:          &corev1.PodDNSConfig{},
-						DNSPolicy:          corev1.DNSNone,
-						AllowedNamespaces:  allowedNamespaces,
-						DisabledNamespaces: disabledNamespaces,
-						AllowedDNSPolicies: allowedDNSPolicies,
-					},
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-			}
-			By("Get the DNSClass")
-			checkDNSclass := &configv1alpha1.DNSClass{}
-			err = k8sClient.Get(ctx, dnsclassNamespacedName, checkDNSclass)
-			Expect(err).NotTo(HaveOccurred())
-			// We must wait until the DNSClass reconciled.
 			Eventually(func(g Gomega) {
-				g.Expect(k8sClient.Get(ctx, dnsclassNamespacedName, checkDNSclass)).To(Succeed())
-				g.Expect(checkDNSclass.GetAnnotations()[common.IsReconciled]).To(Equal("true"))
+				g.Expect(utils.DeleteKubeADMConfigMap(ctx, k8sClient)).Should(Succeed())
+				err := utils.GetKubeADMConfigMap(ctx, k8sClient)
+				g.Expect(apierrors.IsNotFound(err)).Should(Equal(true))
 			}, timeout, interval).Should(Succeed())
+			By("Remove kubelet-config")
+			Eventually(func(g Gomega) {
+				g.Expect(utils.DeleteKubeletConfigMap(ctx, k8sClient)).Should(Succeed())
+				err := utils.GetKubeletConfigMap(ctx, k8sClient)
+				g.Expect(apierrors.IsNotFound(err)).Should(Equal(true))
+			}, timeout, interval).Should(Succeed())
+			By("Create a DNSClass")
+			allowedNamespaces := []string{"default"}
+			disabledNamespaces := []string{"kube-system"}
+			allowedDNSPolicies := []corev1.DNSPolicy{corev1.DNSNone, corev1.DNSClusterFirst, corev1.DNSClusterFirstWithHostNet}
+			dnsclass = &configv1alpha1.DNSClass{
+				Spec: configv1alpha1.DNSClassSpec{
+					DNSConfig:          &corev1.PodDNSConfig{},
+					DNSPolicy:          corev1.DNSNone,
+					AllowedNamespaces:  allowedNamespaces,
+					DisabledNamespaces: disabledNamespaces,
+					AllowedDNSPolicies: allowedDNSPolicies,
+				},
+			}
+			Expect(utils.CreateDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
+			By(fmt.Sprintf("Sync the DNSClass(%s) object", dnsclass.Name))
+			Eventually(func(g Gomega) {
+				g.Expect(utils.GetDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
+				g.Expect(dnsclass.GetAnnotations()[common.IsReconciled]).Should(Equal("true"))
+			}, timeout, interval).Should(Succeed())
+			// Validate that the discovered fields remain unpopulated.
 			By("Check discovered fields")
 			expectedDiscoveredField := &configv1alpha1.DiscoveredFields{
 				Nameservers:   nil,
@@ -323,7 +222,7 @@ kind: KubeletConfiguration
 				ClusterName:   "",
 				DNSDomain:     "",
 			}
-			Expect(checkDNSclass.Status.DiscoveredFields).To(Equal(expectedDiscoveredField))
+			Expect(dnsclass.Status.DiscoveredFields).Should(Equal(expectedDiscoveredField))
 		})
 	})
 })

@@ -31,7 +31,7 @@ import (
 // log is for logging in this package.
 var dnsclasslog = logf.Log.WithName("dnsclass-resource")
 
-var allowedDNSPolicies = []corev1.DNSPolicy{corev1.DNSDefault, corev1.DNSClusterFirst, corev1.DNSClusterFirstWithHostNet, corev1.DNSNone}
+var validDNSPolicies = []corev1.DNSPolicy{corev1.DNSDefault, corev1.DNSClusterFirst, corev1.DNSClusterFirstWithHostNet, corev1.DNSNone}
 var defaultDNSPolicies = []corev1.DNSPolicy{corev1.DNSClusterFirst, corev1.DNSClusterFirstWithHostNet, corev1.DNSNone}
 
 // SetupWebhookWithManager will setup the manager to manage the webhooks
@@ -52,7 +52,7 @@ func (r *DNSClass) Default() {
 	if r.Spec.AllowedDNSPolicies == nil {
 		r.Spec.AllowedDNSPolicies = defaultDNSPolicies
 	}
-	if r.Spec.DNSPolicy == "" && r.Spec.DNSConfig != nil {
+	if r.Spec.DNSPolicy == "" {
 		r.Spec.DNSPolicy = corev1.DNSNone
 	}
 }
@@ -75,23 +75,25 @@ func (r *DNSClass) ValidateUpdate(old runtime.Object) (admission.Warnings, error
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
 func (r *DNSClass) ValidateDelete() (admission.Warnings, error) {
-	dnsclasslog.Info("validate delete", "name", r.Name)
 	// Not used
 	return nil, nil
 }
 
 func (r *DNSClass) validate() (admission.Warnings, error) {
+	// Controls allowedDNSPolicies are valid
 	for _, dnsPolicy := range r.Spec.AllowedDNSPolicies {
-		if !slices.Contains(allowedDNSPolicies, dnsPolicy) {
-			return nil, fmt.Errorf("%s is not allowed for allowedDNSPolicies. Allowed DNS Policies: %v", dnsPolicy, allowedDNSPolicies)
+		if !slices.Contains(validDNSPolicies, dnsPolicy) {
+			return nil, fmt.Errorf("%s is not allowed for allowedDNSPolicies. Allowed DNS Policies: %v", dnsPolicy, validDNSPolicies)
 		}
 	}
 
-	if !slices.Contains(allowedDNSPolicies, r.Spec.DNSPolicy) {
-		return nil, fmt.Errorf("%s is not allowed for dnsPolicy. Allowed DNS Policies: %v", r.Spec.DNSPolicy, allowedDNSPolicies)
+	// Controls if the DNSPolicy is valid
+	if !slices.Contains(validDNSPolicies, r.Spec.DNSPolicy) {
+		return nil, fmt.Errorf("%s is not allowed for dnsPolicy. Allowed DNS Policies: %v", r.Spec.DNSPolicy, validDNSPolicies)
 	}
 
-	if (r.Spec.DNSPolicy != corev1.DNSNone && r.Spec.DNSPolicy != "") && r.Spec.DNSConfig != nil {
+	// Controls if DNSConfig is only set with DNSPolicy `None`
+	if r.Spec.DNSPolicy != corev1.DNSNone && r.Spec.DNSConfig != nil {
 		return nil, fmt.Errorf("%s is not allowed to define when dnsConfig is defined", r.Spec.DNSPolicy)
 	}
 

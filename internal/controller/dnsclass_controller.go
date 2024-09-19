@@ -21,19 +21,42 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"time"
 
+	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	configv1alpha1 "github.com/eminaktas/kubedns-shepherd/api/v1alpha1"
-	"github.com/eminaktas/kubedns-shepherd/internal/common"
 )
+
+const (
+	// typeAvailable represents the status of the object reconciliation
+	TypeAvailable = "Available"
+	// typeDegraded represents the status used when DNSClass is deleted and the finalizer operations are must to occur.
+	TypeDegraded = "Degraded"
+
+	ReconcilePeriod = 1 * time.Second
+
+	// Annotations to be used in resources
+	IsReconciled = "kubedns-shepherd.io/is-reconciled"
+)
+
+// Workload used to define objects
+type Workload struct {
+	Name      string
+	Namespace string
+	Kind      string
+}
 
 // DNSClassReconciler reconciles a DNSClass object
 type DNSClassReconciler struct {
@@ -75,19 +98,19 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	if annotations == nil {
 		annotations = make(map[string]string)
 	}
-	if val, ok := annotations[common.IsReconciled]; !ok || val == "true" {
-		annotations[common.IsReconciled] = "false"
+	if val, ok := annotations[IsReconciled]; !ok || val == "true" {
+		annotations[IsReconciled] = "false"
 		dnsClass.SetAnnotations(annotations)
 		if err := r.Update(ctx, dnsClass); err != nil {
 			logger.Error(err, "Failed to add annotations to DNSClass")
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{Requeue: true, RequeueAfter: common.ReconcilePeriod}, nil
+		return ctrl.Result{Requeue: true, RequeueAfter: ReconcilePeriod}, nil
 	}
 
 	// Set the status as Unknown when no status are available
 	if len(dnsClass.Status.Conditions) == 0 {
-		meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: common.TypeAvailable, Status: metav1.ConditionUnknown, Reason: "Reconciling", Message: "Starting reconciliation"})
+		meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: TypeAvailable, Status: metav1.ConditionUnknown, Reason: "Reconciling", Message: "Starting reconciliation"})
 		if err = r.Status().Update(ctx, dnsClass); err != nil {
 			logger.Error(err, "Failed to update DNSClass to add the status")
 			return ctrl.Result{}, err
@@ -101,33 +124,30 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if dnsClass.Status.DiscoveredFields != nil {
 			discoveredFields = dnsClass.Status.DiscoveredFields
 		}
-		discoveredFields.Nameservers, err = r.getNameservers(ctx)
-		if err != nil {
+
+		if discoveredFields.Nameservers, err = r.getNameservers(ctx); err != nil {
 			undiscoveredField = append(undiscoveredField, "nameservers")
 			logger.Info("Failed to discover nameservers", "error", err)
 		}
 
-		discoveredFields.ClusterDomain, err = r.getClusterDomain(ctx)
-		if err != nil {
+		if discoveredFields.ClusterDomain, err = r.getClusterDomain(ctx); err != nil {
 			undiscoveredField = append(undiscoveredField, "clusterDomain")
 			logger.Info("Failed to discover clusterDomain", "error", err)
 		}
 
-		discoveredFields.ClusterName, err = r.getClusterName(ctx)
-		if err != nil {
+		if discoveredFields.ClusterName, err = r.getClusterName(ctx); err != nil {
 			undiscoveredField = append(undiscoveredField, "clusterName")
 			logger.Info("Failed to discover clusterName", "error", err)
 		}
 
-		discoveredFields.DNSDomain, err = r.getDNSDomain(ctx)
-		if err != nil {
+		if discoveredFields.DNSDomain, err = r.getDNSDomain(ctx); err != nil {
 			undiscoveredField = append(undiscoveredField, "dnsDomain")
 			logger.Info("Failed to discover dnsDomain", "error", err)
 		}
 
 		// Update status if any discovery failing
 		if undiscoveredField != nil {
-			meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: common.TypeAvailable,
+			meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: TypeAvailable,
 				Status: metav1.ConditionFalse, Reason: "Reconciling",
 				Message: fmt.Sprintf("Failed to add some discovered fields; %v. Ignore if the parameters are not used.", undiscoveredField)})
 			if err = r.Status().Update(ctx, dnsClass); err != nil {
@@ -144,21 +164,12 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				return ctrl.Result{}, err
 			}
 
-			return ctrl.Result{Requeue: true, RequeueAfter: common.ReconcilePeriod}, nil
+			return ctrl.Result{Requeue: true, RequeueAfter: ReconcilePeriod}, nil
 		}
 	}
 
-	// Mark the resource as reconciled
-	annotations[common.IsReconciled] = "true"
-	dnsClass.SetAnnotations(annotations)
-
-	if err := r.Update(ctx, dnsClass); err != nil {
-		logger.Error(err, "Failed to update DNSClass to add annotations")
-		return ctrl.Result{}, err
-	}
-
 	// Update status
-	meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: common.TypeAvailable,
+	meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: TypeAvailable,
 		Status: metav1.ConditionTrue, Reason: "Reconciling",
 		Message: "DNSClass reconciled."})
 
@@ -167,11 +178,20 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
+	// Mark the resource as reconciled
+	annotations[IsReconciled] = "true"
+	dnsClass.SetAnnotations(annotations)
+
+	if err := r.Update(ctx, dnsClass); err != nil {
+		logger.Error(err, "Failed to update DNSClass to add annotations")
+		return ctrl.Result{}, err
+	}
+
 	return ctrl.Result{}, nil
 }
 
 func (r *DNSClassReconciler) getDNSDomain(ctx context.Context) (string, error) {
-	data, err := common.GetConfigMapData(ctx, r.Client, "kubeadm-config", "ClusterConfiguration")
+	data, err := r.getConfigMapData(ctx, "kubeadm-config", "ClusterConfiguration")
 	if err != nil {
 		return "", err
 	}
@@ -190,7 +210,7 @@ func (r *DNSClassReconciler) getDNSDomain(ctx context.Context) (string, error) {
 }
 
 func (r *DNSClassReconciler) getClusterName(ctx context.Context) (string, error) {
-	data, err := common.GetConfigMapData(ctx, r.Client, "kubeadm-config", "ClusterConfiguration")
+	data, err := r.getConfigMapData(ctx, "kubeadm-config", "ClusterConfiguration")
 	if err != nil {
 		return "", err
 	}
@@ -204,28 +224,28 @@ func (r *DNSClassReconciler) getClusterName(ctx context.Context) (string, error)
 }
 
 func (r *DNSClassReconciler) getClusterDomain(ctx context.Context) (string, error) {
-	data, err := common.GetConfigMapData(ctx, r.Client, "kubelet-config", "kubelet")
+	data, err := r.getConfigMapData(ctx, "kubelet-config", "kubelet")
 	if err != nil {
 		return "", err
 	}
 
 	clusterDomain, ok := data["clusterDomain"].(string)
 	if !ok {
-		return "", errors.New("clusterDNS field is not a string array")
+		return "", errors.New("clusterDNS field is not a string")
 	}
 
 	return clusterDomain, nil
 }
 
 func (r *DNSClassReconciler) getNameservers(ctx context.Context) ([]string, error) {
-	data, err := common.GetConfigMapData(ctx, r.Client, "kubelet-config", "kubelet")
+	data, err := r.getConfigMapData(ctx, "kubelet-config", "kubelet")
 	if err != nil {
 		return nil, err
 	}
 
 	clusterDNSInterfaceSlice, ok := data["clusterDNS"].([]interface{})
 	if !ok {
-		return nil, errors.New("clusterDNS field is not a string array")
+		return nil, errors.New("clusterDNS field is not an interface array")
 	}
 
 	// Convert interface slice to string slice
@@ -237,11 +257,54 @@ func (r *DNSClassReconciler) getNameservers(ctx context.Context) ([]string, erro
 	return clusterDNSStringSlice, nil
 }
 
+// GetConfigMapData gets specified data in given ConfigMap from kube-system namespace
+func (r *DNSClassReconciler) getConfigMapData(ctx context.Context, configMapName, keyName string) (map[string]interface{}, error) {
+	cmNamespacedName := types.NamespacedName{Name: configMapName, Namespace: "kube-system"}
+	cm := &corev1.ConfigMap{}
+	if err := r.Get(ctx, cmNamespacedName, cm); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("%s not found in cluster", configMapName)
+		}
+		return nil, err
+	}
+
+	if data, ok := cm.Data[keyName]; ok {
+		config := make(map[string]interface{})
+		if err := yaml.Unmarshal([]byte(data), &config); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal %s config: %w", keyName, err)
+		}
+
+		return config, nil
+	}
+	return nil, fmt.Errorf("%s key not found in %s data", keyName, configMapName)
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *DNSClassReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&configv1alpha1.DNSClass{}).
-		WithEventFilter(&common.DnsClassPredicate{}).
+		WithEventFilter(&dnsClassPredicate{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: r.MaxConcurrentReconcilesForDNSClassReconciler}).
 		Complete(r)
+}
+
+// DnsClassPredicate is a predicate for DNSClass objects
+type dnsClassPredicate struct {
+	predicate.Funcs
+}
+
+// Create checks if a DNSClass object is marked as reconciled
+func (*dnsClassPredicate) Create(e event.CreateEvent) bool {
+	return true
+}
+
+// Update checks if a DNSClass object is updated
+func (*dnsClassPredicate) Update(e event.UpdateEvent) bool {
+	// If resources updated, we need to validate for DNS Configuration
+	return e.ObjectNew.GetGeneration() != e.ObjectOld.GetGeneration()
+}
+
+// Delete always returns false for DNSClass deletion events
+func (*dnsClassPredicate) Delete(e event.DeleteEvent) bool {
+	return false
 }

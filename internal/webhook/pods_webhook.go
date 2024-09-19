@@ -20,8 +20,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
+	"slices"
 	"text/template"
 
 	corev1 "k8s.io/api/core/v1"
@@ -30,8 +33,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	configv1alpha1 "github.com/eminaktas/kubedns-shepherd/api/v1alpha1"
-	"github.com/eminaktas/kubedns-shepherd/internal/common"
+	"github.com/eminaktas/kubedns-shepherd/internal/controller"
 )
+
+const DNSClassName = "kubedns-shepherd.io/dns-class-name"
 
 type PodMutator struct {
 	client.Client
@@ -54,7 +59,7 @@ func (p *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 	}
 
 	var dnsClass configv1alpha1.DNSClass
-	dnsClass, err = common.GetDNSClass(ctx, p.Client, pod.Namespace)
+	dnsClass, err = getDNSClass(ctx, p.Client, pod.Namespace)
 	if err != nil {
 		msg := fmt.Sprintf("Failed to detect a DNSClass for %s/%s. Skipping update for this resource", pod.Namespace, podName)
 		logger.Info(msg, "error", err)
@@ -67,7 +72,7 @@ func (p *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 	if annotations == nil {
 		notAvailable = true
 	}
-	if val, ok := annotations[common.IsReconciled]; !ok || val == "false" {
+	if val, ok := annotations[controller.IsReconciled]; !ok || val == "false" {
 		notAvailable = true
 	}
 	if notAvailable {
@@ -77,7 +82,7 @@ func (p *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 	}
 
 	// Configure Pod Object
-	err = p.configureDNSForPod(pod, dnsClass)
+	err = configureDNSForPod(pod, dnsClass)
 	if err != nil {
 		msg := fmt.Sprintf("Failed to configure for %s/%s. Skipping update for this resource", pod.Namespace, podName)
 		logger.Error(err, msg)
@@ -94,7 +99,7 @@ func (p *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 	return admission.PatchResponseFromRaw(req.Object.Raw, marshaledPod)
 }
 
-func (r *PodMutator) configureDNSForPod(pod *corev1.Pod, dnsClass configv1alpha1.DNSClass) error {
+func configureDNSForPod(pod *corev1.Pod, dnsClass configv1alpha1.DNSClass) error {
 	if dnsClass.Spec.DNSPolicy == corev1.DNSNone {
 		// Update DNSClass for dynamic parameters in searches
 		searches := []string{}
@@ -131,6 +136,47 @@ func (r *PodMutator) configureDNSForPod(pod *corev1.Pod, dnsClass configv1alpha1
 	// Set DNSPolicy to None
 	pod.Spec.DNSPolicy = dnsClass.Spec.DNSPolicy
 
-	common.UpdateAnnotation(pod, common.DNSClassName, dnsClass.Name)
+	updateAnnotation(pod, DNSClassName, dnsClass.Name)
 	return nil
+}
+
+// UpdateAnnotation updates or adds an annotation to a Kubernetes object
+func updateAnnotation(obj client.Object, key, value string) {
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
+	annotations[key] = value
+	obj.SetAnnotations(annotations)
+}
+
+// GetDNSClass finds the DNSClass for the pod object with its namespace
+func getDNSClass(ctx context.Context, c client.Client, podNamespace string) (configv1alpha1.DNSClass, error) {
+	var (
+		dnsClass     configv1alpha1.DNSClass
+		dnsClassList configv1alpha1.DNSClassList
+	)
+
+	err := c.List(ctx, &dnsClassList)
+	if err != nil {
+		return configv1alpha1.DNSClass{}, err
+	}
+
+	for _, dnsClassItem := range dnsClassList.Items {
+		if slices.Contains(dnsClassItem.Spec.DisabledNamespaces, podNamespace) {
+			continue
+		}
+		if slices.Contains(dnsClassItem.Spec.AllowedNamespaces, podNamespace) {
+			dnsClass = dnsClassItem
+			break // Exit the loop once a DNSClass is found
+		}
+		if dnsClassItem.Spec.AllowedNamespaces == nil {
+			dnsClass = dnsClassItem
+		}
+	}
+
+	if reflect.DeepEqual(dnsClass, configv1alpha1.DNSClass{}) {
+		return configv1alpha1.DNSClass{}, errors.New("no matching DNSClass found for namespace: " + podNamespace)
+	}
+	return dnsClass, nil
 }

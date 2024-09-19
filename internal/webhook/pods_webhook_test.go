@@ -21,7 +21,7 @@ import (
 	"time"
 
 	configv1alpha1 "github.com/eminaktas/kubedns-shepherd/api/v1alpha1"
-	"github.com/eminaktas/kubedns-shepherd/internal/common"
+	"github.com/eminaktas/kubedns-shepherd/internal/controller"
 	"github.com/eminaktas/kubedns-shepherd/test/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -106,7 +106,7 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 			By("Wait until DNSClass is reconciled")
 			Eventually(func(g Gomega) {
 				g.Expect(utils.GetDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
-				g.Expect(dnsclass.GetAnnotations()[common.IsReconciled]).Should(Equal("true"))
+				g.Expect(dnsclass.GetAnnotations()[controller.IsReconciled]).Should(Equal("true"))
 			}, timeout, interval).Should(Succeed())
 			By("Create a Pod")
 			pod = &corev1.Pod{
@@ -130,7 +130,7 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 			}, timeout, interval).Should(Succeed())
 			Expect(pod.Spec.DNSPolicy).Should(Equal(dnsclass.Spec.DNSPolicy))
 			// Check configured DNSClass name
-			Expect(pod.GetAnnotations()[common.DNSClassName]).Should(Equal(dnsclass.Name))
+			Expect(pod.GetAnnotations()[DNSClassName]).Should(Equal(dnsclass.Name))
 		})
 
 		It("should see DNSClass is created and the configuration applied to pod with discovered fields", func() {
@@ -155,7 +155,7 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 			By("Wait until DNSClass is reconciled")
 			Eventually(func(g Gomega) {
 				g.Expect(utils.GetDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
-				g.Expect(dnsclass.GetAnnotations()[common.IsReconciled]).Should(Equal("true"))
+				g.Expect(dnsclass.GetAnnotations()[controller.IsReconciled]).Should(Equal("true"))
 			}, timeout, interval).Should(Succeed())
 			By("Create a Pod")
 			pod = &corev1.Pod{
@@ -178,7 +178,7 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, pod)).Should(Succeed())
 			}, timeout, interval).Should(Succeed())
 			Expect(pod.Spec.DNSPolicy).Should(Equal(dnsclass.Spec.DNSPolicy))
-			Expect(pod.GetAnnotations()[common.DNSClassName]).Should(Equal(dnsclass.Name))
+			Expect(pod.GetAnnotations()[DNSClassName]).Should(Equal(dnsclass.Name))
 			Expect(pod.Spec.DNSConfig).Should(Equal(&corev1.PodDNSConfig{
 				Nameservers: []string{utils.ClusterDNS},
 				Searches: []string{fmt.Sprintf("svc.%s", utils.ClusterDomain),
@@ -193,7 +193,7 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 			))
 		})
 
-		It("should not see DNSClass configuration applied to pod", func() {
+		It("should fail to see DNSClass configuration applied to pod", func() {
 			By("Create a Pod")
 			pod = &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -218,7 +218,7 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 			Expect(pod.Spec.DNSPolicy).Should(Equal(corev1.DNSClusterFirst))
 		})
 
-		It("should not see DNSClass configuration applied to pod due to namespace is not allowed", func() {
+		It("should fail to see DNSClass configuration applied to pod due to namespace is not allowed", func() {
 			By("Create a DNSClass")
 			dnsclass = &configv1alpha1.DNSClass{
 				Spec: configv1alpha1.DNSClassSpec{
@@ -231,7 +231,7 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 			By("Wait until DNSClass is reconciled")
 			Eventually(func(g Gomega) {
 				g.Expect(utils.GetDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
-				g.Expect(dnsclass.GetAnnotations()[common.IsReconciled]).Should(Equal("true"))
+				g.Expect(dnsclass.GetAnnotations()[controller.IsReconciled]).Should(Equal("true"))
 			}, timeout, interval).Should(Succeed())
 			By("Create a Pod")
 			pod = &corev1.Pod{
@@ -257,7 +257,7 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 			Expect(pod.Spec.DNSPolicy).Should(Equal(corev1.DNSDefault))
 		})
 
-		It("should not see DNSClass configuration not applied to pod due to DNSPolicy is not allowed", func() {
+		It("should fail to see DNSClass configuration applied to pod due to DNSPolicy is not allowed", func() {
 			By("Create a DNSClass")
 			dnsclass = &configv1alpha1.DNSClass{
 				Spec: configv1alpha1.DNSClassSpec{
@@ -270,7 +270,7 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 			By("Wait until DNSClass is reconciled")
 			Eventually(func(g Gomega) {
 				g.Expect(utils.GetDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
-				g.Expect(dnsclass.GetAnnotations()[common.IsReconciled]).Should(Equal("true"))
+				g.Expect(dnsclass.GetAnnotations()[controller.IsReconciled]).Should(Equal("true"))
 			}, timeout, interval).Should(Succeed())
 			By("Create a Pod")
 			pod = &corev1.Pod{
@@ -296,7 +296,7 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 			Expect(pod.Spec.DNSPolicy).Should(Equal(corev1.DNSDefault))
 		})
 
-		It("should not find available DNSClass due to reconciliation", func() {
+		It("should fail to find available DNSClass due to reconciliation", func() {
 			By("Create a DNSClass")
 			dnsclass = &configv1alpha1.DNSClass{
 				Spec: configv1alpha1.DNSClassSpec{

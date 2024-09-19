@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 
-	configv1alpha1 "github.com/eminaktas/kubedns-shepherd/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -161,10 +160,10 @@ func GetKubeletConfigMap(ctx context.Context, k8sClient client.Client) error {
 	return nil
 }
 
-func CreateDNSClass(ctx context.Context, k8sClient client.Client, dnsclass *configv1alpha1.DNSClass) error {
+func CreateDNSClass(ctx context.Context, k8sClient client.Client, dnsclass client.Object) error {
 	// Check if a specific name is provided
-	if dnsclass.Name != "" {
-		err := k8sClient.Get(ctx, types.NamespacedName{Name: dnsclass.Name}, dnsclass)
+	if dnsclass.GetName() != "" {
+		err := k8sClient.Get(ctx, types.NamespacedName{Name: dnsclass.GetName()}, dnsclass)
 		if err != nil {
 			// Return error if it's not a NotFound error
 			if !apierrors.IsNotFound(err) {
@@ -174,30 +173,30 @@ func CreateDNSClass(ctx context.Context, k8sClient client.Client, dnsclass *conf
 			if err = k8sClient.Create(ctx, dnsclass); err != nil {
 				// Return error if it's not an AlreadyExists error
 				if !apierrors.IsAlreadyExists(err) {
-					return err
+					return nil
 				}
+				return err
 			}
 		}
 	} else {
 		// If no specific name is provided, directly set the GenerateName and create the object
-		dnsclass.ObjectMeta = metav1.ObjectMeta{
-			GenerateName: dnsclassGenerateName,
-		}
+		dnsclass.SetGenerateName(dnsclassGenerateName)
 		if err := k8sClient.Create(ctx, dnsclass); err != nil {
 			if !apierrors.IsAlreadyExists(err) {
-				return err
+				return nil
 			}
+			return err
 		}
 	}
 	return nil
 }
 
-func DeleteDNSClass(ctx context.Context, k8sClient client.Client, dnsclass *configv1alpha1.DNSClass) error {
-	if dnsclass.Name != "" {
+func DeleteDNSClass(ctx context.Context, k8sClient client.Client, dnsclass client.Object) error {
+	if dnsclass.GetName() != "" {
 		// If the resource updated, it won't be removed
 		// due to the error of the object has been modified
 		// So, we re-fetch the resource before remove it.
-		if err := k8sClient.Get(ctx, types.NamespacedName{Name: dnsclass.Name}, dnsclass); err != nil {
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: dnsclass.GetName()}, dnsclass); err != nil {
 			if apierrors.IsNotFound(err) {
 				return nil
 			}
@@ -211,8 +210,8 @@ func DeleteDNSClass(ctx context.Context, k8sClient client.Client, dnsclass *conf
 	return nil
 }
 
-func GetDNSClass(ctx context.Context, k8sClient client.Client, dnsclass *configv1alpha1.DNSClass) error {
-	if err := k8sClient.Get(ctx, types.NamespacedName{Name: dnsclass.Name}, dnsclass); err != nil {
+func GetDNSClass(ctx context.Context, k8sClient client.Client, dnsclass client.Object) error {
+	if err := k8sClient.Get(ctx, types.NamespacedName{Name: dnsclass.GetName()}, dnsclass); err != nil {
 		return err
 	}
 	return nil

@@ -18,10 +18,13 @@ package controller
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"reflect"
+	"slices"
+	"strings"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
@@ -29,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -37,18 +41,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	configv1alpha1 "github.com/eminaktas/kubedns-shepherd/api/v1alpha1"
-)
-
-const (
-	// typeAvailable represents the status of the object reconciliation
-	TypeAvailable = "Available"
-	// typeDegraded represents the status used when DNSClass is deleted and the finalizer operations are must to occur.
-	TypeDegraded = "Degraded"
-
-	ReconcilePeriod = 1 * time.Second
-
-	// Annotations to be used in resources
-	IsReconciled = "kubedns-shepherd.io/is-reconciled"
 )
 
 // Workload used to define objects
@@ -80,114 +72,88 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	logger := log.FromContext(ctx)
 	logger.Info("Reconciling for DNSClass")
 
-	dnsClass := &configv1alpha1.DNSClass{}
-	err := r.Get(ctx, req.NamespacedName, dnsClass)
+	dnsclass := &configv1alpha1.DNSClass{}
+	err := r.Get(ctx, req.NamespacedName, dnsclass)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			// If the custom resource is not found then, it usually means that it was deleted or not created
-			// In this way, we will stop the reconciliation
-			logger.Info("DNSClass not found. Ignoring since object must be deleted")
+			logger.Info("DNSClass not found. Assuming it has been deleted.")
 			return ctrl.Result{}, nil
 		}
 		logger.Error(err, "Failed to get DNSClass")
 		return ctrl.Result{}, err
 	}
 
-	// Mark the resource as not reconciled
-	annotations := dnsClass.GetAnnotations()
-	if annotations == nil {
-		annotations = make(map[string]string)
-	}
-	if val, ok := annotations[IsReconciled]; !ok || val == "true" {
-		annotations[IsReconciled] = "false"
-		dnsClass.SetAnnotations(annotations)
-		if err := r.Update(ctx, dnsClass); err != nil {
-			logger.Error(err, "Failed to add annotations to DNSClass")
-			return ctrl.Result{}, err
-		}
-		return ctrl.Result{Requeue: true, RequeueAfter: ReconcilePeriod}, nil
+	// Set status to Init if it is not set
+	if dnsclass.Status.State == "" {
+		dnsclass.Status.State = configv1alpha1.StateInit
 	}
 
-	// Set the status as Unknown when no status are available
-	if len(dnsClass.Status.Conditions) == 0 {
-		meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: TypeAvailable, Status: metav1.ConditionUnknown, Reason: "Reconciling", Message: "Starting reconciliation"})
-		if err = r.Status().Update(ctx, dnsClass); err != nil {
-			logger.Error(err, "Failed to update DNSClass to add the status")
-			return ctrl.Result{}, err
+	statusMessage := "Initialization in progress"
+	defer func() {
+		if err := r.updateStatus(ctx, err, statusMessage, dnsclass); err != nil {
+			logger.Error(err, "Failed to update DNSClass status")
 		}
-	}
+	}()
 
-	// Fill discovered fields in DNSClass object
-	if dnsClass.Spec.DNSPolicy == corev1.DNSNone {
-		undiscoveredField := []string{}
-		discoveredFields := &configv1alpha1.DiscoveredFields{}
-		if dnsClass.Status.DiscoveredFields != nil {
-			discoveredFields = dnsClass.Status.DiscoveredFields
+	if dnsclass.Spec.DNSPolicy == corev1.DNSNone {
+		discoveredFields := dnsclass.Status.DiscoveredFields
+		if discoveredFields == nil {
+			discoveredFields = &configv1alpha1.DiscoveredFields{}
 		}
 
-		if discoveredFields.Nameservers, err = r.getNameservers(ctx); err != nil {
-			undiscoveredField = append(undiscoveredField, "nameservers")
-			logger.Info("Failed to discover nameservers", "error", err)
-		}
-
-		if discoveredFields.ClusterDomain, err = r.getClusterDomain(ctx); err != nil {
-			undiscoveredField = append(undiscoveredField, "clusterDomain")
-			logger.Info("Failed to discover clusterDomain", "error", err)
-		}
-
-		if discoveredFields.ClusterName, err = r.getClusterName(ctx); err != nil {
-			undiscoveredField = append(undiscoveredField, "clusterName")
-			logger.Info("Failed to discover clusterName", "error", err)
-		}
-
-		if discoveredFields.DNSDomain, err = r.getDNSDomain(ctx); err != nil {
-			undiscoveredField = append(undiscoveredField, "dnsDomain")
-			logger.Info("Failed to discover dnsDomain", "error", err)
-		}
-
-		// Update status if any discovery failing
-		if undiscoveredField != nil {
-			meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: TypeAvailable,
-				Status: metav1.ConditionFalse, Reason: "Reconciling",
-				Message: fmt.Sprintf("Failed to add some discovered fields; %v. Ignore if the parameters are not used.", undiscoveredField)})
-			if err = r.Status().Update(ctx, dnsClass); err != nil {
-				logger.Error(err, "Failed to update DNSClass to add the status")
-				return ctrl.Result{}, err
+		undiscoveredFields, message := r.discoverFields(ctx, discoveredFields)
+		statusMessage = message
+		if len(undiscoveredFields) > 0 {
+			for _, key := range dnsclass.ExtractTemplateKeysRegex() {
+				if !slices.Contains(undiscoveredFields, key) {
+					err = errors.Errorf("failed to discover template keys: %v", strings.Join(undiscoveredFields, ", "))
+					return ctrl.Result{}, err
+				}
 			}
 		}
 
-		if !reflect.DeepEqual(discoveredFields, dnsClass.Status.DiscoveredFields) {
-			dnsClass.Status.DiscoveredFields = discoveredFields
-
-			if err := r.Status().Update(ctx, dnsClass); err != nil {
-				logger.Error(err, "Failed to update DNSClass to add discovered fields")
-				return ctrl.Result{}, err
-			}
-
-			return ctrl.Result{Requeue: true, RequeueAfter: ReconcilePeriod}, nil
+		if !reflect.DeepEqual(discoveredFields, dnsclass.Status.DiscoveredFields) {
+			dnsclass.Status.DiscoveredFields = discoveredFields
 		}
 	}
 
-	// Update status
-	meta.SetStatusCondition(&dnsClass.Status.Conditions, metav1.Condition{Type: TypeAvailable,
-		Status: metav1.ConditionTrue, Reason: "Reconciling",
-		Message: "DNSClass reconciled."})
-
-	if err := r.Status().Update(ctx, dnsClass); err != nil {
-		logger.Error(err, "Failed to update DNSClass to add the status")
-		return ctrl.Result{}, err
-	}
-
-	// Mark the resource as reconciled
-	annotations[IsReconciled] = "true"
-	dnsClass.SetAnnotations(annotations)
-
-	if err := r.Update(ctx, dnsClass); err != nil {
-		logger.Error(err, "Failed to update DNSClass to add annotations")
-		return ctrl.Result{}, err
-	}
+	dnsclass.Status.State = configv1alpha1.StateReady
+	statusMessage = "Ready"
 
 	return ctrl.Result{}, nil
+}
+
+func (r *DNSClassReconciler) discoverFields(ctx context.Context, discoveredFields *configv1alpha1.DiscoveredFields) ([]string, string) {
+	var err error
+	undiscoveredFields := []string{}
+	errorMessages := []string{}
+
+	if discoveredFields.Nameservers, err = r.getNameservers(ctx); err != nil {
+		undiscoveredFields = append(undiscoveredFields, "nameservers")
+		errorMessages = append(errorMessages, fmt.Sprintf("Nameservers: %v", err))
+	}
+
+	if discoveredFields.ClusterDomain, err = r.getClusterDomain(ctx); err != nil {
+		undiscoveredFields = append(undiscoveredFields, "clusterDomain")
+		errorMessages = append(errorMessages, fmt.Sprintf("ClusterDomain: %v", err))
+	}
+
+	if discoveredFields.ClusterName, err = r.getClusterName(ctx); err != nil {
+		undiscoveredFields = append(undiscoveredFields, "clusterName")
+		errorMessages = append(errorMessages, fmt.Sprintf("ClusterName: %v", err))
+	}
+
+	if discoveredFields.DNSDomain, err = r.getDNSDomain(ctx); err != nil {
+		undiscoveredFields = append(undiscoveredFields, "dnsDomain")
+		errorMessages = append(errorMessages, fmt.Sprintf("DNSDomain: %v", err))
+	}
+
+	// Combine error messages into one if there were any errors
+	if len(errorMessages) > 0 {
+		return undiscoveredFields, fmt.Sprintf("discovery failed for the following fields: %s", strings.Join(errorMessages, "; "))
+	}
+
+	return undiscoveredFields, ""
 }
 
 func (r *DNSClassReconciler) getDNSDomain(ctx context.Context) (string, error) {
@@ -262,9 +228,6 @@ func (r *DNSClassReconciler) getConfigMapData(ctx context.Context, configMapName
 	cmNamespacedName := types.NamespacedName{Name: configMapName, Namespace: "kube-system"}
 	cm := &corev1.ConfigMap{}
 	if err := r.Get(ctx, cmNamespacedName, cm); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, fmt.Errorf("%s not found in cluster", configMapName)
-		}
 		return nil, err
 	}
 
@@ -277,6 +240,65 @@ func (r *DNSClassReconciler) getConfigMapData(ctx context.Context, configMapName
 		return config, nil
 	}
 	return nil, fmt.Errorf("%s key not found in %s data", keyName, configMapName)
+}
+
+func (r *DNSClassReconciler) updateStatus(ctx context.Context, rErr error, message string, dnsclass *configv1alpha1.DNSClass) error {
+	condition := metav1.Condition{
+		Type:               configv1alpha1.StateInit,
+		Status:             metav1.ConditionUnknown,
+		Message:            message,
+		Reason:             "ReconcileStart",
+		LastTransitionTime: metav1.NewTime(time.Now()),
+	}
+
+	if rErr != nil {
+		condition = metav1.Condition{
+			Type:               configv1alpha1.StateError,
+			Status:             metav1.ConditionTrue,
+			Message:            rErr.Error(),
+			Reason:             "ReconcileError",
+			LastTransitionTime: metav1.NewTime(time.Now()),
+		}
+
+		dnsclass.Status.State = configv1alpha1.StateError
+		meta.SetStatusCondition(&dnsclass.Status.Conditions, condition)
+
+		return r.writeStatus(ctx, dnsclass)
+	}
+
+	if dnsclass.Status.State == configv1alpha1.StateReady {
+		condition = metav1.Condition{
+			Type:               configv1alpha1.StateReady,
+			Status:             metav1.ConditionTrue,
+			Message:            message,
+			Reason:             "ReconcileCompleted",
+			LastTransitionTime: metav1.NewTime(time.Now()),
+		}
+	}
+
+	meta.SetStatusCondition(&dnsclass.Status.Conditions, condition)
+
+	return r.writeStatus(ctx, dnsclass)
+}
+
+func (r *DNSClassReconciler) writeStatus(ctx context.Context, dnsclass *configv1alpha1.DNSClass) error {
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		dc := &configv1alpha1.DNSClass{}
+
+		err := r.Get(ctx, types.NamespacedName{Name: dnsclass.Name, Namespace: dnsclass.Namespace}, dc)
+		if err != nil {
+			return err
+		}
+
+		dc.Status = dnsclass.Status
+		return r.Status().Update(ctx, dc)
+	})
+
+	if apierrors.IsNotFound(err) {
+		return nil
+	}
+
+	return errors.Wrap(err, "update status")
 }
 
 // SetupWithManager sets up the controller with the Manager.

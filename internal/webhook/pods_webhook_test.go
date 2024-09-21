@@ -21,7 +21,6 @@ import (
 	"time"
 
 	configv1alpha1 "github.com/eminaktas/kubedns-shepherd/api/v1alpha1"
-	"github.com/eminaktas/kubedns-shepherd/internal/controller"
 	"github.com/eminaktas/kubedns-shepherd/test/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -33,26 +32,74 @@ import (
 )
 
 var _ = Describe("Pods Webhook Controller", Ordered, func() {
-	const timeout = 10 * time.Second
-	const interval = time.Millisecond * 250
-	const podGenerateName = "test-pod-"
+	const (
+		pollingTimeout  = 10 * time.Second
+		pollingInterval = 250 * time.Millisecond
+		podGenerateName = "test-pod-"
+	)
 
-	var ns *corev1.Namespace
-	var pod *corev1.Pod
-	var dnsclass *configv1alpha1.DNSClass
+	var (
+		ns       *corev1.Namespace
+		pod      *corev1.Pod
+		dnsclass *configv1alpha1.DNSClass
+	)
+
+	// Helper to create DNSClass and validate reconciliation
+	createAndValidateDNSClass := func(dnsconfig *corev1.PodDNSConfig, dnsPolicy corev1.DNSPolicy, allowedNamespaces []string, disabledNamespaces []string, allowedDNSPolicies []corev1.DNSPolicy, expectedState string) {
+		dnsclass = &configv1alpha1.DNSClass{
+			Spec: configv1alpha1.DNSClassSpec{
+				DNSConfig:          dnsconfig,
+				DNSPolicy:          dnsPolicy,
+				AllowedNamespaces:  allowedNamespaces,
+				DisabledNamespaces: disabledNamespaces,
+				AllowedDNSPolicies: allowedDNSPolicies,
+			},
+		}
+
+		Expect(utils.CreateDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed(), "Failed to create DNSClass")
+		By("Waiting until DNSClass is reconciled")
+		Eventually(func(g Gomega) {
+			g.Expect(utils.GetDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
+			g.Expect(dnsclass.Status.State).Should(Equal(expectedState))
+		}, pollingTimeout, pollingInterval).Should(Succeed())
+	}
+
+	// Helper to create Pod and validate DNS policy
+	createPodAndValidate := func(podDNSPolicy, expectedDNSPolicy corev1.DNSPolicy) {
+		pod = &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				GenerateName: podGenerateName,
+				Namespace:    ns.Name,
+			},
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{
+						Name:  "test-container",
+						Image: "busybox:stable",
+					},
+				},
+				DNSPolicy: podDNSPolicy,
+			},
+		}
+		Expect(k8sClient.Create(ctx, pod)).Should(Succeed())
+		By("Validating Pod DNS configuration")
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, pod)).Should(Succeed())
+			g.Expect(pod.Spec.DNSPolicy).Should(Equal(expectedDNSPolicy))
+		}, pollingTimeout, pollingInterval).Should(Succeed())
+	}
+
 	Context("When creating and updating Pods", func() {
 		BeforeAll(func() {
-			By("Create kubeadm-config")
-			Expect(utils.CreateKubeADMConfigMap(ctx, k8sClient)).Should(Succeed())
-			By("Create kubelet-config")
-			Expect(utils.CreateKubeletConfigMap(ctx, k8sClient)).Should(Succeed())
+			By("Creating required ConfigMaps")
+			Expect(utils.CreateKubeADMConfigMap(ctx, k8sClient)).Should(Succeed(), "Failed to create kubeadm-config")
+			Expect(utils.CreateKubeletConfigMap(ctx, k8sClient)).Should(Succeed(), "Failed to create kubelet-config")
 		})
 
 		AfterAll(func() {
-			By("Delete kubelet-config")
-			Expect(utils.DeleteKubeletConfigMap(ctx, k8sClient)).Should(Succeed())
-			By("Delete kubeadm-config")
-			Expect(utils.DeleteKubeADMConfigMap(ctx, k8sClient)).Should(Succeed())
+			By("Cleaning up ConfigMaps")
+			Expect(utils.DeleteKubeletConfigMap(ctx, k8sClient)).Should(Succeed(), "Failed to delete kubelet-config")
+			Expect(utils.DeleteKubeADMConfigMap(ctx, k8sClient)).Should(Succeed(), "Failed to delete kubeadm-config")
 		})
 
 		BeforeEach(func() {
@@ -63,28 +110,26 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, ns)).Should(Succeed())
-
-			// Wait until namespace created.
-			Eventually(func(g Gomega) {
-				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Namespace: ns.Namespace, Name: ns.Name}, ns))
-			}, timeout, interval).Should(Succeed())
 		})
 
 		AfterEach(func() {
-			// Removes pod, namespace and DNSClass after each test.
-			By("Cleanup the Pod")
-			err := k8sClient.Delete(ctx, pod)
-			Expect(err).ShouldNot(HaveOccurred())
-			By("Cleanup the Namespace")
-			err = k8sClient.Delete(ctx, ns)
-			Expect(err).ShouldNot(HaveOccurred())
-			By("Cleanup the DNSClass instance")
-			Expect(utils.DeleteDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
-			ns, pod, dnsclass = &corev1.Namespace{}, &corev1.Pod{}, &configv1alpha1.DNSClass{}
+			// Cleanup pod, namespace, and DNSClass after each test.
+			By("Deleting resources")
+			if pod != nil {
+				Expect(k8sClient.Delete(ctx, pod)).Should(Succeed())
+				pod = nil
+			}
+			if ns != nil {
+				Expect(k8sClient.Delete(ctx, ns)).Should(Succeed())
+				ns = nil
+			}
+			if dnsclass != nil {
+				Expect(utils.DeleteDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
+				dnsclass = nil
+			}
 		})
 
-		It("should see DNSClass is created and the configuration applied to pod with no dns config defined", func() {
-			By("Create a DNSClass")
+		It("should apply DNSClass configuration to pod without DNS config defined", func() {
 			dnsconfig := &corev1.PodDNSConfig{
 				Nameservers: []string{utils.ClusterDNS},
 				Searches:    []string{fmt.Sprintf("svc.%s", utils.ClusterDomain), utils.ClusterDomain},
@@ -93,48 +138,16 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 					{Name: "edns0"},
 				},
 			}
-			dnsclass = &configv1alpha1.DNSClass{
-				Spec: configv1alpha1.DNSClassSpec{
-					DNSConfig:          dnsconfig,
-					DNSPolicy:          corev1.DNSNone,
-					AllowedNamespaces:  []string{ns.Name},
-					DisabledNamespaces: []string{"kube-system"},
-					AllowedDNSPolicies: []corev1.DNSPolicy{corev1.DNSNone, corev1.DNSClusterFirst, corev1.DNSClusterFirstWithHostNet},
-				},
-			}
-			Expect(utils.CreateDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
-			By("Wait until DNSClass is reconciled")
-			Eventually(func(g Gomega) {
-				g.Expect(utils.GetDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
-				g.Expect(dnsclass.GetAnnotations()[controller.IsReconciled]).Should(Equal("true"))
-			}, timeout, interval).Should(Succeed())
-			By("Create a Pod")
-			pod = &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					GenerateName: podGenerateName,
-					Namespace:    ns.Name,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "test-container",
-							Image: "busybox:stable",
-						},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, pod)).Should(Succeed())
-			By("Get the Pod object")
-			Eventually(func(g Gomega) {
-				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, pod)).Should(Succeed())
-			}, timeout, interval).Should(Succeed())
-			Expect(pod.Spec.DNSPolicy).Should(Equal(dnsclass.Spec.DNSPolicy))
-			// Check configured DNSClass name
+			createAndValidateDNSClass(dnsconfig, corev1.DNSNone, nil, nil, nil, configv1alpha1.StateReady)
+
+			// Create Pod and verify
+			createPodAndValidate(corev1.DNSClusterFirst, dnsclass.Spec.DNSPolicy)
+
+			By("Validating Pod annotations")
 			Expect(pod.GetAnnotations()[DNSClassName]).Should(Equal(dnsclass.Name))
 		})
 
-		It("should see DNSClass is created and the configuration applied to pod with discovered fields", func() {
-			By("Create a DNSClass")
+		It("should apply DNSClass with discovered fields to pod", func() {
 			dnsconfig := &corev1.PodDNSConfig{
 				Searches: []string{"svc.{{ .clusterDomain }}", "{{ .podNamespace }}.svc.{{ .dnsDomain }}", "{{ .clusterName }}"},
 				Options: []corev1.PodDNSConfigOption{
@@ -142,46 +155,16 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 					{Name: "edns0"},
 				},
 			}
-			dnsclass = &configv1alpha1.DNSClass{
-				Spec: configv1alpha1.DNSClassSpec{
-					DNSConfig:          dnsconfig,
-					DNSPolicy:          corev1.DNSNone,
-					AllowedNamespaces:  []string{ns.Name},
-					DisabledNamespaces: []string{"kube-system"},
-					AllowedDNSPolicies: []corev1.DNSPolicy{corev1.DNSNone, corev1.DNSClusterFirst, corev1.DNSClusterFirstWithHostNet},
-				},
-			}
-			Expect(utils.CreateDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
-			By("Wait until DNSClass is reconciled")
-			Eventually(func(g Gomega) {
-				g.Expect(utils.GetDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
-				g.Expect(dnsclass.GetAnnotations()[controller.IsReconciled]).Should(Equal("true"))
-			}, timeout, interval).Should(Succeed())
-			By("Create a Pod")
-			pod = &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					GenerateName: podGenerateName,
-					Namespace:    ns.Name,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "test-container",
-							Image: "busybox:stable",
-						},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, pod)).Should(Succeed())
-			By("Get the Pod object")
-			Eventually(func(g Gomega) {
-				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, pod)).Should(Succeed())
-			}, timeout, interval).Should(Succeed())
-			Expect(pod.Spec.DNSPolicy).Should(Equal(dnsclass.Spec.DNSPolicy))
-			Expect(pod.GetAnnotations()[DNSClassName]).Should(Equal(dnsclass.Name))
-			Expect(pod.Spec.DNSConfig).Should(Equal(&corev1.PodDNSConfig{
+			createAndValidateDNSClass(dnsconfig, corev1.DNSNone, []string{ns.Name}, nil, nil, configv1alpha1.StateReady)
+
+			// Create Pod and verify
+			createPodAndValidate(corev1.DNSClusterFirst, dnsclass.Spec.DNSPolicy)
+
+			By("Validating Pod DNSConfig searches")
+			expectedDNSConfig := &corev1.PodDNSConfig{
 				Nameservers: []string{utils.ClusterDNS},
-				Searches: []string{fmt.Sprintf("svc.%s", utils.ClusterDomain),
+				Searches: []string{
+					fmt.Sprintf("svc.%s", utils.ClusterDomain),
 					fmt.Sprintf("%s.svc.%s", pod.Namespace, utils.ClusterDomain),
 					utils.ClusterName,
 				},
@@ -189,16 +172,50 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 					{Name: "ndots", Value: utilptr.To("2")},
 					{Name: "edns0"},
 				},
-			},
-			))
+			}
+			Expect(pod.Spec.DNSConfig).Should(Equal(expectedDNSConfig))
 		})
 
-		It("should fail to see DNSClass configuration applied to pod", func() {
-			By("Create a Pod")
-			pod = &corev1.Pod{
+		It("should fail to apply DNSClass to pod due to state is not ready", func() {
+			By("Deleting kubelet config map")
+			Expect(utils.DeleteKubeletConfigMap(ctx, k8sClient)).Should(Succeed())
+
+			dnsconfig := &corev1.PodDNSConfig{
+				Searches: []string{
+					"svc.{{ .clusterDomain }}",
+					"{{ .podNamespace }}.svc.{{ .dnsDomain }}",
+					"{{ .clusterName }}"},
+			}
+
+			createAndValidateDNSClass(dnsconfig, corev1.DNSNone, []string{ns.Name}, nil, nil, configv1alpha1.StateError)
+
+			createPodAndValidate(corev1.DNSClusterFirst, corev1.DNSClusterFirst)
+
+			By("Restoring kubelet config map")
+			Expect(utils.CreateKubeletConfigMap(ctx, k8sClient)).Should(Succeed())
+		})
+
+		It("should fail to apply DNSClass to pod with templating due to missing kubelet", func() {
+			dnsconfig := &corev1.PodDNSConfig{
+				Searches: []string{
+					"svc.{{ .clusterDomain }}",
+					"{{ .podNamespace }}.svc.{{ .dnsDomain }}",
+					"{{ .clusterName }}"},
+			}
+			localDNSClass := configv1alpha1.DNSClass{
+				Spec: configv1alpha1.DNSClassSpec{
+					DNSConfig: dnsconfig,
+					DNSPolicy: corev1.DNSNone,
+				},
+				Status: configv1alpha1.DNSClassStatus{
+					State:            configv1alpha1.StateReady,
+					DiscoveredFields: &configv1alpha1.DiscoveredFields{},
+				},
+			}
+			localPod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					GenerateName: podGenerateName,
-					Namespace:    ns.Name,
+					Name:      "test-pod-templating",
+					Namespace: ns.Name,
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
@@ -210,34 +227,28 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 					DNSPolicy: corev1.DNSClusterFirst,
 				},
 			}
-			Expect(k8sClient.Create(ctx, pod)).Should(Succeed())
-			By("Get the Pod object")
-			Eventually(func(g Gomega) {
-				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, pod)).Should(Succeed())
-			}, timeout, interval).Should(Succeed())
-			Expect(pod.Spec.DNSPolicy).Should(Equal(corev1.DNSClusterFirst))
+			err := configureDNSForPod(localPod, localDNSClass)
+			Expect(err).Should(HaveOccurred())
 		})
 
-		It("should fail to see DNSClass configuration applied to pod due to namespace is not allowed", func() {
-			By("Create a DNSClass")
-			dnsclass = &configv1alpha1.DNSClass{
+		It("should fail to apply DNSClass to pod with templating due to wrong delimiter", func() {
+			dnsconfig := &corev1.PodDNSConfig{
+				Searches: []string{"svc.[[ .clusterDomain ]]"},
+			}
+			localDNSClass := configv1alpha1.DNSClass{
 				Spec: configv1alpha1.DNSClassSpec{
-					DNSPolicy:          corev1.DNSNone,
-					AllowedNamespaces:  []string{"dummy-namespace"},
-					AllowedDNSPolicies: []corev1.DNSPolicy{corev1.DNSNone, corev1.DNSClusterFirst, corev1.DNSClusterFirstWithHostNet, corev1.DNSDefault},
+					DNSConfig: dnsconfig,
+					DNSPolicy: corev1.DNSNone,
+				},
+				Status: configv1alpha1.DNSClassStatus{
+					State:            configv1alpha1.StateReady,
+					DiscoveredFields: &configv1alpha1.DiscoveredFields{},
 				},
 			}
-			Expect(utils.CreateDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
-			By("Wait until DNSClass is reconciled")
-			Eventually(func(g Gomega) {
-				g.Expect(utils.GetDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
-				g.Expect(dnsclass.GetAnnotations()[controller.IsReconciled]).Should(Equal("true"))
-			}, timeout, interval).Should(Succeed())
-			By("Create a Pod")
-			pod = &corev1.Pod{
+			localPod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					GenerateName: podGenerateName,
-					Namespace:    ns.Name,
+					Name:      "test-pod-templating",
+					Namespace: ns.Name,
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
@@ -246,89 +257,63 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 							Image: "busybox:stable",
 						},
 					},
-					DNSPolicy: corev1.DNSDefault,
+					DNSPolicy: corev1.DNSClusterFirst,
 				},
 			}
-			Expect(k8sClient.Create(ctx, pod)).Should(Succeed())
-			By("Get the Pod object")
-			Eventually(func(g Gomega) {
-				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, pod)).Should(Succeed())
-			}, timeout, interval).Should(Succeed())
-			Expect(pod.Spec.DNSPolicy).Should(Equal(corev1.DNSDefault))
+			err := configureDNSForPod(localPod, localDNSClass)
+			Expect(err).Should(HaveOccurred())
 		})
 
-		It("should fail to see DNSClass configuration applied to pod due to DNSPolicy is not allowed", func() {
-			By("Create a DNSClass")
-			dnsclass = &configv1alpha1.DNSClass{
-				Spec: configv1alpha1.DNSClassSpec{
-					DNSPolicy:          corev1.DNSNone,
-					AllowedNamespaces:  []string{ns.Name},
-					AllowedDNSPolicies: []corev1.DNSPolicy{corev1.DNSNone},
-				},
-			}
-			Expect(utils.CreateDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
-			By("Wait until DNSClass is reconciled")
-			Eventually(func(g Gomega) {
-				g.Expect(utils.GetDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
-				g.Expect(dnsclass.GetAnnotations()[controller.IsReconciled]).Should(Equal("true"))
-			}, timeout, interval).Should(Succeed())
-			By("Create a Pod")
-			pod = &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					GenerateName: podGenerateName,
-					Namespace:    ns.Name,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "test-container",
-							Image: "busybox:stable",
-						},
-					},
-					DNSPolicy: corev1.DNSDefault,
-				},
-			}
-			Expect(k8sClient.Create(ctx, pod)).Should(Succeed())
-			By("Get the Pod object")
-			Eventually(func(g Gomega) {
-				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, pod)).Should(Succeed())
-			}, timeout, interval).Should(Succeed())
-			Expect(pod.Spec.DNSPolicy).Should(Equal(corev1.DNSDefault))
+		It("should not apply DNSClass to pod when nameservers field is missing", func() {
+			By("Deleting kubelet config map")
+			Expect(utils.DeleteKubeletConfigMap(ctx, k8sClient)).Should(Succeed())
+
+			dnsconfig := &corev1.PodDNSConfig{}
+			createAndValidateDNSClass(dnsconfig, corev1.DNSNone, []string{ns.Name}, nil, nil, configv1alpha1.StateReady)
+
+			createPodAndValidate(corev1.DNSClusterFirst, corev1.DNSClusterFirst)
+
+			By("Restoring kubelet config map")
+			Expect(utils.CreateKubeletConfigMap(ctx, k8sClient)).Should(Succeed())
 		})
 
-		It("should fail to find available DNSClass due to reconciliation", func() {
-			By("Create a DNSClass")
-			dnsclass = &configv1alpha1.DNSClass{
-				Spec: configv1alpha1.DNSClassSpec{
-					DNSPolicy:          corev1.DNSNone,
-					AllowedNamespaces:  []string{ns.Name},
-					AllowedDNSPolicies: []corev1.DNSPolicy{corev1.DNSNone, corev1.DNSClusterFirst, corev1.DNSClusterFirstWithHostNet, corev1.DNSDefault},
-				},
-			}
-			Expect(utils.CreateDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
-			// Don't wait until reconciliation completed
-			By("Create a Pod")
-			pod = &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					GenerateName: podGenerateName,
-					Namespace:    ns.Name,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "test-container",
-							Image: "busybox:stable",
-						},
-					},
-					DNSPolicy: corev1.DNSDefault,
-				},
-			}
-			Expect(k8sClient.Create(ctx, pod)).Should(Succeed())
-			By("Get the Pod object")
-			Eventually(func(g Gomega) {
-				g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, pod)).Should(Succeed())
-			}, timeout, interval).Should(Succeed())
-			Expect(pod.Spec.DNSPolicy).Should(Equal(corev1.DNSDefault))
+		It("should not apply DNSClass to pod when pod namespace is disabled", func() {
+			dnsconfig := &corev1.PodDNSConfig{}
+			createAndValidateDNSClass(dnsconfig, corev1.DNSNone, nil, []string{"kube-system", ns.Name}, nil, configv1alpha1.StateReady)
+
+			createPodAndValidate(corev1.DNSClusterFirst, corev1.DNSClusterFirst)
+		})
+
+		It("should not apply DNSClass to pod when a namespace is not in allowed list", func() {
+			dnsconfig := &corev1.PodDNSConfig{}
+			createAndValidateDNSClass(dnsconfig, corev1.DNSNone, []string{"dummy-namespace"}, nil, nil, configv1alpha1.StateReady)
+
+			createPodAndValidate(corev1.DNSDefault, corev1.DNSDefault)
+		})
+
+		It("should not apply DNSClass to pod when a DNSPolicy is not allowed", func() {
+			dnsconfig := &corev1.PodDNSConfig{}
+			createAndValidateDNSClass(dnsconfig, corev1.DNSNone, nil, nil, []corev1.DNSPolicy{corev1.DNSNone}, configv1alpha1.StateReady)
+
+			createPodAndValidate(corev1.DNSDefault, corev1.DNSDefault)
+		})
+
+		It("should apply DNSClass to pod when DNSConfig is nil", func() {
+			createAndValidateDNSClass(nil, corev1.DNSClusterFirst, nil, nil, nil, configv1alpha1.StateReady)
+
+			createPodAndValidate(corev1.DNSClusterFirstWithHostNet, corev1.DNSClusterFirst)
+
+			By("Validating Pod annotations")
+			Expect(pod.GetAnnotations()[DNSClassName]).Should(Equal(dnsclass.Name))
+		})
+
+		It("should apply DNSClass to pod when DNSConfig is nil and DNSPolicy is None", func() {
+			createAndValidateDNSClass(nil, corev1.DNSNone, nil, nil, nil, configv1alpha1.StateReady)
+
+			createPodAndValidate(corev1.DNSClusterFirstWithHostNet, corev1.DNSNone)
+
+			By("Validating Pod annotations")
+			Expect(pod.GetAnnotations()[DNSClassName]).Should(Equal(dnsclass.Name))
 		})
 	})
 })

@@ -1,0 +1,24 @@
+apiVersion: config.kubedns-shepherd.io/v1alpha1
+kind: DNSClass
+metadata:
+  labels:
+    app.kubernetes.io/name: dnsclass
+    app.kubernetes.io/instance: dnsclass-sample
+    app.kubernetes.io/part-of: kubedns-shepherd
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: kubedns-shepherd
+  name: dnsclass-sample
+spec:
+  allowedNamespaces:
+    - default
+  disabledNamespaces:
+    - kube-system
+  dnsConfig:
+    nameservers:
+      - 10.96.0.10
+    searches:
+      - "svc.{{ .InvalidclusterName }}"
+    options:
+      - name: ndots
+        value: "2"
+      - name: edns0 

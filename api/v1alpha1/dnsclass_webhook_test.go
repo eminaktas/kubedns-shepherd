@@ -29,55 +29,58 @@ var _ = Describe("DNSClass Webhook", Ordered, func() {
 	var dnsclass *DNSClass
 
 	AfterEach(func() {
-		By("Cleanup the DNSClass instance")
-		Expect(utils.DeleteDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
-		dnsclass = &DNSClass{}
+		By("Cleaning up the DNSClass instance")
+		if dnsclass != nil {
+			Expect(utils.DeleteDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
+			dnsclass = nil
+		}
 	})
 
-	Context("When creating DNSClass under Defaulting Webhook", func() {
-		It("Should fill in the default values", func() {
-			By("Create DNSClass")
+	Context("When creating DNSClass with Defaulting Webhook", func() {
+		It("Should apply default values when not provided", func() {
+			By("Creating DNSClass with no fields set")
 			dnsclass = &DNSClass{}
 			Expect(utils.CreateDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
-			By("Check default fields")
-			Expect(dnsclass.Spec.DNSPolicy).Should(Equal(corev1.DNSNone))
-			Expect(dnsclass.Spec.AllowedDNSPolicies).Should(Equal(defaultDNSPolicies))
+
+			By("Verifying default values are applied")
+			Expect(dnsclass.Spec.DNSPolicy).Should(Equal(corev1.DNSNone), "DNSPolicy should default to DNSNone")
+			Expect(dnsclass.Spec.AllowedDNSPolicies).Should(Equal(DefaultDNSPolicies), "AllowedDNSPolicies should default to valid defaults")
 		})
 	})
 
+	// Helper to create DNSClass and validate reconciliation
+	createAndValidateDNSClass := func() {
+		Expect(utils.CreateDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed(), "Failed to create DNSClass")
+		By("Syncing DNSClass")
+		Expect(dnsclass.GetName()).Should(BeEmpty())
+	}
+
 	Context("When creating DNSClass under Validating Webhook", func() {
-		It("Should deny if any of the allowedDNSPolicies is not valid", func() {
-			By("Create DNSClass")
+		It("Should reject invalid AllowedDNSPolicies", func() {
 			dnsclass = &DNSClass{
 				Spec: DNSClassSpec{
-					AllowedDNSPolicies: []corev1.DNSPolicy{corev1.DNSNone, "NoneValidDNSPolicy"},
+					AllowedDNSPolicies: []corev1.DNSPolicy{corev1.DNSNone, "InvalidDNSPolicy"},
 				},
 			}
-			Expect(utils.CreateDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
-			By("Check DNSClass name")
-			Expect(dnsclass.GetName()).Should(BeEmpty())
+			createAndValidateDNSClass()
 		})
 
-		It("Should deny if DNSPolicy is not valid", func() {
-			By("Create DNSClass")
+		It("Should reject invalid DNSPolicy", func() {
+			By("Creating DNSClass with an invalid DNSPolicy")
 			dnsclass = &DNSClass{
 				Spec: DNSClassSpec{
-					DNSPolicy: "NoneValidDNSPolicy",
+					DNSPolicy: "InvalidDNSPolicy",
 				},
 			}
-			Expect(utils.CreateDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
-			By("Check DNSClass name")
-			Expect(dnsclass.GetName()).Should(BeEmpty())
+			createAndValidateDNSClass()
 		})
 
-		It("Should deny if DNSConfig is set without DNSPolicy `None`", func() {
-			By("Create DNSClass")
+		It("Should reject DNSConfig when DNSPolicy is not `None`", func() {
+			By("Creating DNSClass with DNSConfig but without DNSPolicy None")
 			dnsconfig := &corev1.PodDNSConfig{
 				Nameservers: []string{utils.ClusterDNS},
 				Searches:    []string{fmt.Sprintf("svc.%s", utils.ClusterDomain), utils.ClusterDomain},
-				Options: []corev1.PodDNSConfigOption{
-					{Name: "edns0"},
-				},
+				Options:     []corev1.PodDNSConfigOption{{Name: "edns0"}},
 			}
 			dnsclass = &DNSClass{
 				Spec: DNSClassSpec{
@@ -85,23 +88,36 @@ var _ = Describe("DNSClass Webhook", Ordered, func() {
 					DNSConfig: dnsconfig,
 				},
 			}
-			Expect(utils.CreateDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
-			By("Check DNSClass name")
-			Expect(dnsclass.GetName()).Should(BeEmpty())
+			createAndValidateDNSClass()
 		})
 
-		It("Should update DNSConfig", func() {
-			By("Create DNSClass")
+		It("Should reject DNSConfig with invalid template keys", func() {
+			By("Creating DNSClass with invalid template keys in DNSConfig.Searches")
+			dnsconfig := &corev1.PodDNSConfig{
+				Searches: []string{"svc.{{ .podNamespace }}", "{{ .clusterDomainInvalid }}"},
+			}
+			dnsclass = &DNSClass{
+				Spec: DNSClassSpec{
+					DNSPolicy: corev1.DNSNone,
+					DNSConfig: dnsconfig,
+				},
+			}
+			createAndValidateDNSClass()
+		})
+
+		It("Should allow updating DNSClass fields", func() {
+			By("Creating a valid DNSClass")
 			dnsclass = &DNSClass{}
 			Expect(utils.CreateDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
-			By("Update DNSClass")
+
+			By("Updating the AllowedNamespaces field")
 			updatedAllowedNamespaces := []string{"default", "another-namespace"}
 			dnsclass.Spec.AllowedNamespaces = updatedAllowedNamespaces
 			Expect(k8sClient.Update(ctx, dnsclass)).Should(Succeed())
-			By("Sync DNSClass")
+
+			By("Verifying that the DNSClass was updated correctly")
 			Expect(utils.GetDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
-			By("Check allowedNamespaces")
-			Expect(dnsclass.Spec.AllowedNamespaces).Should(Equal(updatedAllowedNamespaces))
+			Expect(dnsclass.Spec.AllowedNamespaces).Should(Equal(updatedAllowedNamespaces), "AllowedNamespaces should be updated correctly")
 		})
 	})
 })

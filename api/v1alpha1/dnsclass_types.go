@@ -21,6 +21,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	StateInit  string = "initializing"
+	StateReady string = "ready"
+	StateError string = "error"
+)
+
 // DNSClassSpec defines the desired state of DNSClass
 type DNSClassSpec struct {
 	AllowedNamespaces  []string             `json:"allowedNamespaces,omitempty"`
@@ -41,13 +47,14 @@ type DiscoveredFields struct {
 type DNSClassStatus struct {
 	// +operator-sdk:csv:customresourcedefinitions:type=status
 	Conditions       []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
+	State            string             `json:"state,omitempty"`
 	DiscoveredFields *DiscoveredFields  `json:"discoveredFields,omitempty"`
 }
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
 //+kubebuilder:resource:scope=Cluster,shortName="dc"
-//+kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[*].status"
+//+kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.state"
 //+kubebuilder:printcolumn:name="ClusterName",type="string",JSONPath=".status.discoveredFields.clusterName"
 //+kubebuilder:printcolumn:name="ClusterDomain",type="string",JSONPath=".status.discoveredFields.clusterDomain"
 //+kubebuilder:printcolumn:name="DNSDomain",type="string",JSONPath=".status.discoveredFields.dnsDomain"

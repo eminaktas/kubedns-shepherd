@@ -120,6 +120,8 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	dnsclass.Status.State = configv1alpha1.StateReady
 	statusMessage = "Ready"
 
+	logger.Info("Reconciling completed for DNSClass")
+
 	return ctrl.Result{}, nil
 }
 

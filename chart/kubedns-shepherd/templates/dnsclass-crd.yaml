@@ -5,7 +5,7 @@ metadata:
   name: dnsclasses.config.kubedns-shepherd.io
   annotations:
     cert-manager.io/inject-ca-from: '{{ .Release.Namespace }}/{{ include "chart.fullname" . }}-serving-cert'
-    controller-gen.kubebuilder.io/version: v0.16.2
+    controller-gen.kubebuilder.io/version: v0.16.3
     {{- if .Values.crds.keep }}
     helm.sh/resource-policy: keep
     {{- end }}

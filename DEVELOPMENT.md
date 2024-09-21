@@ -47,7 +47,7 @@ Here is an example configuration for .devcontainer:
 ```json
 {
     "name": "kubedns-shepherd",
-    "image": "mcr.microsoft.com/devcontainers/go:1-1.22-bookworm",
+    "image": "mcr.microsoft.com/devcontainers/go:1-1.23-bookworm",
     "mounts": [
         "source=${localWorkspaceFolder}/tmp/k8s-webhook-server,target=/tmp/k8s-webhook-server,type=bind",
         "source=${localEnv:HOME}${localEnv:USERPROFILE}/.kube/minikube-config,target=/home/vscode/.kube/config,readonly,type=bind"

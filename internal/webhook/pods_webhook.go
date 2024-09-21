@@ -37,7 +37,7 @@ const DNSClassName = "kubedns-shepherd.io/dns-class-name"
 
 type PodMutator struct {
 	client.Client
-	*admission.Decoder
+	admission.Decoder
 }
 
 // +kubebuilder:webhook:path=/mutate-v1-pod,mutating=true,failurePolicy=ignore,sideEffects=None,groups="",resources=pods,verbs=create;update,versions=v1,name=mpod.kb.io,admissionReviewVersions=v1

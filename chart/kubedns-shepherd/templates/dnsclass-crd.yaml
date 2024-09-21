@@ -5,7 +5,7 @@ metadata:
   name: dnsclasses.config.kubedns-shepherd.io
   annotations:
     cert-manager.io/inject-ca-from: '{{ .Release.Namespace }}/{{ include "chart.fullname" . }}-serving-cert'
-    controller-gen.kubebuilder.io/version: v0.14.0
+    controller-gen.kubebuilder.io/version: v0.16.2
     {{- if .Values.crds.keep }}
     helm.sh/resource-policy: keep
     {{- end }}
@@ -33,7 +33,7 @@ spec:
   scope: Cluster
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .status.conditions[*].status
+    - jsonPath: .status.state
       name: Ready
       type: string
     - jsonPath: .status.discoveredFields.clusterName
@@ -106,8 +106,8 @@ spec:
                       Duplicated entries will be removed. Resolution options given in Options
                       will override those that appear in the base DNSPolicy.
                     items:
-                      description: PodDNSConfigOption defines DNS resolver options
-                        of a pod.
+                      description: PodDNSConfigOption defines DNS resolver options of
+                        a pod.
                       properties:
                         name:
                           description: Required.
@@ -134,16 +134,8 @@ spec:
             properties:
               conditions:
                 items:
-                  description: "Condition contains details for one aspect of the current
-                    state of this API Resource.\n---\nThis struct is intended for
-                    direct use as an array at the field path .status.conditions.  For
-                    example,\n\n\n\ttype FooStatus struct{\n\t    // Represents the
-                    observations of a foo's current state.\n\t    // Known .status.conditions.type
-                    are: \"Available\", \"Progressing\", and \"Degraded\"\n\t    //
-                    +patchMergeKey=type\n\t    // +patchStrategy=merge\n\t    // +listType=map\n\t
-                    \   // +listMapKey=type\n\t    Conditions []metav1.Condition `json:\"conditions,omitempty\"
-                    patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`\n\n\n\t
-                    \   // other fields\n\t}"
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
                   properties:
                     lastTransitionTime:
                       description: |-
@@ -184,12 +176,7 @@ spec:
                       - Unknown
                       type: string
                     type:
-                      description: |-
-                        type of condition in CamelCase or in foo.example.com/CamelCase.
-                        ---
-                        Many .condition.type values are consistent across resources like Available, but because arbitrary conditions can be
-                        useful (see .node.status.conditions), the ability to deconflict is important.
-                        The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
                       maxLength: 316
                       pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
                       type: string
@@ -214,6 +201,8 @@ spec:
                       type: string
                     type: array
                 type: object
+              state:
+                type: string
             type: object
         type: object
     served: true

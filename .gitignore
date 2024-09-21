@@ -32,5 +32,5 @@ go.work
 .devcontainer
 
 tmp
-chart/charts
-chart/Chart.lock
+chart/kubedns-shepherd/charts
+chart/kubedns-shepherd/Chart.lock

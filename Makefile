@@ -328,4 +328,4 @@ $(HELMIFY): $(LOCALBIN)
 	test -s $(LOCALBIN)/helmify || GOBIN=$(LOCALBIN) go install github.com/arttor/helmify/cmd/helmify@latest
     
 helm: manifests kustomize helmify
-	$(KUSTOMIZE) build config/default | $(HELMIFY) -cert-manager-as-subchart -cert-manager-version="v1.15.1" -generate-defaults -image-pull-secrets -original-name -preserve-ns
+	$(KUSTOMIZE) build config/default | $(HELMIFY) -cert-manager-as-subchart -cert-manager-version="v1.15.3" -generate-defaults -image-pull-secrets -original-name -preserve-ns

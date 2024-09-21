@@ -38,6 +38,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
         image: {{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}
+        imagePullPolicy: {{ .Values.imagePullPolicy }}
         livenessProbe:
           httpGet:
             path: /healthz
@@ -65,8 +66,7 @@ spec:
           name: cert
           readOnly: true
       imagePullSecrets: {{ .Values.imagePullSecrets | default list | toJson }}
-      securityContext:
-        runAsNonRoot: true
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
       serviceAccountName: {{ include "chart.fullname" . }}-controller-manager
       terminationGracePeriodSeconds: 10
       volumes:

@@ -21,6 +21,8 @@ image:
   repository: ghcr.io/eminaktas/kubedns-shepherd
   tag: ""
 
+imagePullPolicy: IfNotPresent
+
 serviceMonitor:
   enabled: false
 
@@ -37,6 +39,9 @@ resources:
   requests:
     cpu: 10m
     memory: 64Mi
+
+podSecurityContext:
+  runAsNonRoot: true
 
 serviceAccount:
   annotations: {}

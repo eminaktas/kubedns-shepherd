@@ -26,6 +26,7 @@ import (
 	"text/template"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -35,9 +36,18 @@ import (
 
 const DNSClassName = "kubedns-shepherd.io/dns-class-name"
 
+var (
+	ErrPodDecode            = errors.New("failed to decode pod object")
+	ErrNoDNSClass           = errors.New("no matching DNSClass found")
+	ErrNotAvailableDNSClass = errors.New("%s DNSClass not currently available")
+	ErrDNSConfig            = errors.New("failed to configure %s DNSClass")
+	ErrMarshal              = errors.New("json marshal failed")
+)
+
 type PodMutator struct {
 	client.Client
 	admission.Decoder
+	record.EventRecorder
 }
 
 // +kubebuilder:webhook:path=/mutate-v1-pod,mutating=true,failurePolicy=ignore,sideEffects=None,groups="",resources=pods,verbs=create;update,versions=v1,name=mpod.kb.io,admissionReviewVersions=v1
@@ -45,50 +55,88 @@ type PodMutator struct {
 func (p *PodMutator) Handle(ctx context.Context, req admission.Request) admission.Response {
 	logger := log.FromContext(ctx)
 
-	skipMsg := fmt.Sprintf("Skipping DNS configuration for %s/%s", req.Namespace, req.Name)
 	pod := &corev1.Pod{}
 	err := p.Decode(req, pod)
 	if err != nil {
-		msg := fmt.Sprintf("Failed to decode the pod. %s", skipMsg)
-		logger.Error(err, msg)
-		return admission.Allowed(msg)
+		logger.Error(err, ErrPodDecode.Error())
+		p.Event(pod, corev1.EventTypeWarning, "FailedDNSClassMutation", ErrPodDecode.Error())
+		return admission.Allowed(ErrPodDecode.Error())
 	}
 
-	podName := pod.GetName()
-	if pod.Name == "" {
-		podName = fmt.Sprintf("%s... (name pending generation)", pod.GetGenerateName())
+	// Create a deep copy of the pod to safely modify its fields for events reference
+	copyPod := pod.DeepCopy()
+
+	// Set the pod name in the copy if it hasn't been generated yet
+	// This ensures a name is available for events even if the original pod is pending name generation
+	if pod.GetName() == "" {
+		copyPod.SetName(fmt.Sprintf("%s<unknown>", pod.GetGenerateName()))
 	}
 
-	dnsclass, err := getDNSClass(ctx, p.Client, pod.Namespace, pod.Spec.DNSPolicy)
+	dnsclass, err := p.getDNSClass(ctx, pod)
 	if err != nil {
-		msg := fmt.Sprintf("Failed to detect a DNSClass. %s", skipMsg)
-		logger.Info(msg, "error", err)
-		return admission.Allowed(msg)
+		logger.Info(err.Error())
+		p.Event(copyPod, corev1.EventTypeNormal, "SkippedDNSClassMutation", err.Error())
+		return admission.Allowed(err.Error())
 	}
+
+	dnsclassName := dnsclass.GetName()
 
 	if dnsclass.Status.State != configv1alpha1.StateReady {
-		msg := fmt.Sprintf("DNSClass %s is not available at the moment. %s", dnsclass.Name, skipMsg)
-		logger.Info(msg)
-		return admission.Allowed(msg)
+		logger.Info(ErrNotAvailableDNSClass.Error(), "dnsclass", dnsclassName)
+		p.Eventf(copyPod, corev1.EventTypeWarning, "FailedDNSClassMutation", ErrNotAvailableDNSClass.Error(), dnsclassName)
+		return admission.Allowed(fmt.Sprintf(ErrNotAvailableDNSClass.Error(), dnsclassName))
 	}
 
 	err = configureDNSForPod(pod, dnsclass)
 	if err != nil {
-		msg := fmt.Sprintf("Failed to configure DNS for pod. %s", skipMsg)
-		logger.Error(err, msg)
-		return admission.Allowed(msg)
+		logger.Error(err, ErrDNSConfig.Error())
+		p.Eventf(copyPod, corev1.EventTypeWarning, "FailedDNSClassMutation", ErrDNSConfig.Error(), dnsclassName)
+		return admission.Allowed(fmt.Sprintf(ErrDNSConfig.Error(), dnsclassName))
 	}
 
 	marshaledPod, err := json.Marshal(pod)
 	if err != nil {
-		msg := fmt.Sprintf("Failed to marshal pod after DNS configuration. %s", skipMsg)
-		logger.Error(err, msg)
-		return admission.Allowed(msg)
+		logger.Error(err, ErrMarshal.Error())
+		p.Event(copyPod, corev1.EventTypeWarning, "FailedDNSClassMutation", ErrMarshal.Error())
+		return admission.Allowed(ErrMarshal.Error())
 	}
 
-	logger.Info(fmt.Sprintf("Successfully configured DNS for pod %s/%s with DNSClass %s", pod.Namespace, podName, dnsclass.Name))
+	logger.Info(fmt.Sprintf("Successfully configured DNS for pod %s/%s with DNSClass %s", pod.GetNamespace(), pod.GetName(), dnsclassName))
+	p.Event(copyPod, corev1.EventTypeNormal, "SuccessfulDNSClassMutation", fmt.Sprintf("DNS configuration successfully applied from DNSClass resource '%s'", dnsclassName))
 
 	return admission.PatchResponseFromRaw(req.Object.Raw, marshaledPod)
+}
+
+// GetDNSClass finds the DNSClass for the pod object with its namespace
+func (p *PodMutator) getDNSClass(ctx context.Context, pod *corev1.Pod) (configv1alpha1.DNSClass, error) {
+	var dnsClassList configv1alpha1.DNSClassList
+	var dnsClass configv1alpha1.DNSClass
+
+	err := p.List(ctx, &dnsClassList)
+	if err != nil {
+		return configv1alpha1.DNSClass{}, err
+	}
+
+	podNamespace := pod.GetNamespace()
+
+	for _, dnsClassItem := range dnsClassList.Items {
+		// Skip DNSClass if the namespace is disabled
+		if slices.Contains(dnsClassItem.Spec.DisabledNamespaces, podNamespace) {
+			continue
+		}
+
+		// Ensure the DNS policy is allowed
+		if !slices.Contains(dnsClassItem.Spec.AllowedDNSPolicies, pod.Spec.DNSPolicy) {
+			continue
+		}
+
+		// Select the DNSClass if it's allowed for the namespace or no specific namespaces are defined
+		if len(dnsClassItem.Spec.AllowedNamespaces) == 0 || slices.Contains(dnsClassItem.Spec.AllowedNamespaces, podNamespace) {
+			return dnsClassItem, nil
+		}
+	}
+
+	return dnsClass, ErrNoDNSClass
 }
 
 func configureDNSForPod(pod *corev1.Pod, dnsClass configv1alpha1.DNSClass) error {
@@ -161,34 +209,4 @@ func updateAnnotation(obj client.Object, key, value string) {
 	}
 	annotations[key] = value
 	obj.SetAnnotations(annotations)
-}
-
-// GetDNSClass finds the DNSClass for the pod object with its namespace
-func getDNSClass(ctx context.Context, c client.Client, podNamespace string, podDNSPolicy corev1.DNSPolicy) (configv1alpha1.DNSClass, error) {
-	var dnsClassList configv1alpha1.DNSClassList
-	var dnsClass configv1alpha1.DNSClass
-
-	err := c.List(ctx, &dnsClassList)
-	if err != nil {
-		return configv1alpha1.DNSClass{}, err
-	}
-
-	for _, dnsClassItem := range dnsClassList.Items {
-		// Skip DNSClass if the namespace is disabled
-		if slices.Contains(dnsClassItem.Spec.DisabledNamespaces, podNamespace) {
-			continue
-		}
-
-		// Ensure the DNS policy is allowed
-		if !slices.Contains(dnsClassItem.Spec.AllowedDNSPolicies, podDNSPolicy) {
-			continue
-		}
-
-		// Select the DNSClass if it's allowed for the namespace or no specific namespaces are defined
-		if len(dnsClassItem.Spec.AllowedNamespaces) == 0 || slices.Contains(dnsClassItem.Spec.AllowedNamespaces, podNamespace) {
-			return dnsClassItem, nil
-		}
-	}
-
-	return dnsClass, errors.New("no matching DNSClass found for namespace: " + podNamespace)
 }

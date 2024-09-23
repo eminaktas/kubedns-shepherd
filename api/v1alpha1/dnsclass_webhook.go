@@ -59,18 +59,25 @@ type DNSClassCustomDefaulter struct {
 
 var _ webhook.CustomDefaulter = &DNSClassCustomDefaulter{}
 
-// Default implements webhook.Defaulter so a webhook will be registered for the type
+// Default implements webhook.CustomDefaulter so a webhook will be registered for the Kind DNSClass
 func (r *DNSClassCustomDefaulter) Default(ctx context.Context, obj runtime.Object) error {
-	dnsclass := obj.(*DNSClass)
-	dnsclasslog.Info("default", "name", dnsclass.Name)
+	dnsclass, ok := obj.(*DNSClass)
+	if !ok {
+		return fmt.Errorf("expected a DNSClass object but got %T", obj)
+	}
+
+	dnsclasslog.Info("Defaulting process started", "name", dnsclass.GetName())
 
 	if dnsclass.Spec.AllowedDNSPolicies == nil {
 		dnsclass.Spec.AllowedDNSPolicies = DefaultDNSPolicies
+		dnsclasslog.Info("Applied default AllowedDNSPolicies", "name", dnsclass.GetName(), "DefaultPolicies", DefaultDNSPolicies)
 	}
 	if dnsclass.Spec.DNSPolicy == "" {
 		dnsclass.Spec.DNSPolicy = corev1.DNSNone
+		dnsclasslog.Info("Applied default DNSPolicy", "name", dnsclass.GetName(), "DefaultPolicy", corev1.DNSNone)
 	}
 
+	dnsclasslog.Info("Defaulting process completed", "name", dnsclass.GetName())
 	return nil
 }
 
@@ -81,21 +88,27 @@ type DNSClassCustomValidator struct {
 
 var _ webhook.CustomValidator = &DNSClassCustomValidator{}
 
-// ValidateCreate implements webhook.Validator so a webhook will be registered for the type
+// ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the Kind DNSClass
 func (r *DNSClassCustomValidator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
-	dnsclass := obj.(*DNSClass)
-	dnsclasslog.Info("validate create", "name", dnsclass.Name)
+	dnsclass, ok := obj.(*DNSClass)
+	if !ok {
+		return nil, fmt.Errorf("expected a DNSClass object but got %T", obj)
+	}
+	dnsclasslog.Info("Validation for DNSClass upon creation", "name", dnsclass.GetName())
 	return r.validate(dnsclass)
 }
 
-// ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
+// ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the Kind DNSClass
 func (r *DNSClassCustomValidator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
-	dnsclass := newObj.(*DNSClass)
-	dnsclasslog.Info("validate update", "name", dnsclass.Name)
+	dnsclass, ok := newObj.(*DNSClass)
+	if !ok {
+		return nil, fmt.Errorf("expected a DNSClass object but got %T", newObj)
+	}
+	dnsclasslog.Info("Validation for DNSClass upon update", "name", dnsclass.GetName())
 	return r.validate(dnsclass)
 }
 
-// ValidateDelete implements webhook.Validator so a webhook will be registered for the type
+// ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the Kind DNSClass
 func (r *DNSClassCustomValidator) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
 	// No validation required on delete for now
 	return nil, nil

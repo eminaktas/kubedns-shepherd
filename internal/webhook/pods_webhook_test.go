@@ -17,6 +17,7 @@ limitations under the License.
 package webhook_controller
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -24,10 +25,15 @@ import (
 	"github.com/eminaktas/kubedns-shepherd/test/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
 	utilptr "k8s.io/utils/ptr"
 )
 
@@ -195,75 +201,6 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 			Expect(utils.CreateKubeletConfigMap(ctx, k8sClient)).Should(Succeed())
 		})
 
-		It("should fail to apply DNSClass to pod with templating due to missing kubelet", func() {
-			dnsconfig := &corev1.PodDNSConfig{
-				Searches: []string{
-					"svc.{{ .clusterDomain }}",
-					"{{ .podNamespace }}.svc.{{ .dnsDomain }}",
-					"{{ .clusterName }}"},
-			}
-			localDNSClass := configv1alpha1.DNSClass{
-				Spec: configv1alpha1.DNSClassSpec{
-					DNSConfig: dnsconfig,
-					DNSPolicy: corev1.DNSNone,
-				},
-				Status: configv1alpha1.DNSClassStatus{
-					State:            configv1alpha1.StateReady,
-					DiscoveredFields: &configv1alpha1.DiscoveredFields{},
-				},
-			}
-			localPod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod-templating",
-					Namespace: ns.Name,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "test-container",
-							Image: "busybox:stable",
-						},
-					},
-					DNSPolicy: corev1.DNSClusterFirst,
-				},
-			}
-			err := configureDNSForPod(localPod, localDNSClass)
-			Expect(err).Should(HaveOccurred())
-		})
-
-		It("should fail to apply DNSClass to pod with templating due to wrong delimiter", func() {
-			dnsconfig := &corev1.PodDNSConfig{
-				Searches: []string{"svc.[[ .clusterDomain ]]"},
-			}
-			localDNSClass := configv1alpha1.DNSClass{
-				Spec: configv1alpha1.DNSClassSpec{
-					DNSConfig: dnsconfig,
-					DNSPolicy: corev1.DNSNone,
-				},
-				Status: configv1alpha1.DNSClassStatus{
-					State:            configv1alpha1.StateReady,
-					DiscoveredFields: &configv1alpha1.DiscoveredFields{},
-				},
-			}
-			localPod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod-templating",
-					Namespace: ns.Name,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "test-container",
-							Image: "busybox:stable",
-						},
-					},
-					DNSPolicy: corev1.DNSClusterFirst,
-				},
-			}
-			err := configureDNSForPod(localPod, localDNSClass)
-			Expect(err).Should(HaveOccurred())
-		})
-
 		It("should not apply DNSClass to pod when nameservers field is missing", func() {
 			By("Deleting kubelet config map")
 			Expect(utils.DeleteKubeletConfigMap(ctx, k8sClient)).Should(Succeed())
@@ -314,6 +251,142 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 
 			By("Validating Pod annotations")
 			Expect(pod.GetAnnotations()[DNSClassName]).Should(Equal(dnsclass.Name))
+		})
+	})
+
+	Context("When calling functions directly", func() {
+		It("should fail to decode pod object", func() {
+			k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
+				Scheme: scheme.Scheme,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			podMutator := &PodMutator{
+				Client:        k8sManager.GetClient(),
+				Decoder:       admission.NewDecoder(k8sManager.GetScheme()),
+				EventRecorder: k8sManager.GetEventRecorderFor("pod-mutator-webhook-controller"),
+			}
+
+			podReq := admission.Request{
+				AdmissionRequest: admissionv1.AdmissionRequest{
+					Kind: metav1.GroupVersionKind{
+						Kind:    "Pod",
+						Version: "v1",
+						Group:   "",
+					},
+					Name:      "test-pod-dummy",
+					Namespace: "test-ns-dummy",
+					Object: runtime.RawExtension{
+						Raw: nil,
+					},
+				},
+			}
+			admissionResponse := podMutator.Handle(context.TODO(), podReq)
+			Expect(admissionResponse.AdmissionResponse.Allowed).Should(BeTrue())
+		})
+
+		It("should fail to list dnsclass", func() {
+			k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
+				Scheme: scheme.Scheme,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			podMutator := &PodMutator{
+				Client: k8sManager.GetClient(),
+			}
+
+			pod := &corev1.Pod{}
+
+			dnsClass, err := podMutator.getDNSClass(context.TODO(), pod)
+			Expect(dnsClass).Should(Equal(configv1alpha1.DNSClass{}))
+			Expect(err).Should(HaveOccurred())
+		})
+
+		It("should fail at template execute due to missing key", func() {
+			dnsconfig := &corev1.PodDNSConfig{
+				Searches: []string{
+					"svc.{{ .clusterDomain }}",
+					"{{ .podNamespace }}.svc.{{ .dnsDomain }}",
+					"{{ .clusterName }}"},
+			}
+			localDNSClass := configv1alpha1.DNSClass{
+				Spec: configv1alpha1.DNSClassSpec{
+					DNSConfig: dnsconfig,
+					DNSPolicy: corev1.DNSNone,
+				},
+				Status: configv1alpha1.DNSClassStatus{
+					State:            configv1alpha1.StateReady,
+					DiscoveredFields: &configv1alpha1.DiscoveredFields{},
+				},
+			}
+			localPod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod-dummy",
+					Namespace: "test-ns-dummy",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "test-container",
+							Image: "busybox:stable",
+						},
+					},
+					DNSPolicy: corev1.DNSClusterFirst,
+				},
+			}
+			err := configureDNSForPod(localPod, localDNSClass)
+			Expect(err).Should(HaveOccurred())
+		})
+
+		It("should fail at template execute", func() {
+			dnsconfig := &corev1.PodDNSConfig{
+				Searches: []string{"svc.[[ .clusterDomain ]]"},
+			}
+			localDNSClass := configv1alpha1.DNSClass{
+				Spec: configv1alpha1.DNSClassSpec{
+					DNSConfig: dnsconfig,
+					DNSPolicy: corev1.DNSNone,
+				},
+				Status: configv1alpha1.DNSClassStatus{
+					State:            configv1alpha1.StateReady,
+					DiscoveredFields: &configv1alpha1.DiscoveredFields{},
+				},
+			}
+			localPod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod-dummy",
+					Namespace: "test-ns-dummy",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "test-container",
+							Image: "busybox:stable",
+						},
+					},
+					DNSPolicy: corev1.DNSClusterFirst,
+				},
+			}
+			err := configureDNSForPod(localPod, localDNSClass)
+			Expect(err).Should(HaveOccurred())
+		})
+
+		It("should fail at template parse", func() {
+			pod := &corev1.Pod{}
+			dnsclass := configv1alpha1.DNSClass{
+				Spec: configv1alpha1.DNSClassSpec{
+					DNSConfig: &corev1.PodDNSConfig{
+						Searches: []string{"{{}}"},
+					},
+					DNSPolicy: corev1.DNSNone,
+				},
+				Status: configv1alpha1.DNSClassStatus{
+					DiscoveredFields: &configv1alpha1.DiscoveredFields{},
+				},
+			}
+
+			err := configureDNSForPod(pod, dnsclass)
+			Expect(err).Should(HaveOccurred())
 		})
 	})
 })

@@ -116,7 +116,8 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	err = (&controller.DNSClassReconciler{
-		Client: k8sManager.GetClient(),
+		Client:        k8sManager.GetClient(),
+		EventRecorder: k8sManager.GetEventRecorderFor("dnsclass-controller"),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -125,8 +126,9 @@ var _ = BeforeSuite(func() {
 	// Set up pod webhook
 	k8sManager.GetWebhookServer().Register("/mutate-v1-pod", &webhook.Admission{
 		Handler: &PodMutator{
-			Client:  k8sManager.GetClient(),
-			Decoder: admission.NewDecoder(k8sManager.GetScheme()),
+			Client:        k8sManager.GetClient(),
+			Decoder:       admission.NewDecoder(k8sManager.GetScheme()),
+			EventRecorder: k8sManager.GetEventRecorderFor("pod-mutator-webhook-controller"),
 		},
 	})
 

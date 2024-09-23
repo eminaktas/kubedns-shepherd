@@ -94,7 +94,8 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	err = (&DNSClassReconciler{
-		Client: k8sManager.GetClient(),
+		Client:        k8sManager.GetClient(),
+		EventRecorder: k8sManager.GetEventRecorderFor("dnsclass-controller"),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 

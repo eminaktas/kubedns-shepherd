@@ -32,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -53,6 +54,7 @@ type Workload struct {
 // DNSClassReconciler reconciles a DNSClass object
 type DNSClassReconciler struct {
 	client.Client
+	record.EventRecorder
 
 	MaxConcurrentReconcilesForDNSClassReconciler int
 }
@@ -70,7 +72,7 @@ type DNSClassReconciler struct {
 // Reconcile reconciles a DNSClass object
 func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
-	logger.Info("Reconciling for DNSClass")
+	logger.Info("Reconciling")
 
 	dnsclass := &configv1alpha1.DNSClass{}
 	err := r.Get(ctx, req.NamespacedName, dnsclass)
@@ -82,6 +84,8 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		logger.Error(err, "Failed to get DNSClass")
 		return ctrl.Result{}, err
 	}
+
+	r.EventRecorder.Event(dnsclass, corev1.EventTypeNormal, "Reconciling", "Reconciliation started")
 
 	// Set status to Init if it is not set
 	if dnsclass.Status.State == "" {
@@ -107,6 +111,7 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			for _, key := range dnsclass.ExtractTemplateKeysRegex() {
 				if !slices.Contains(undiscoveredFields, key) {
 					err = errors.Errorf("failed to discover template keys: %v", strings.Join(undiscoveredFields, ", "))
+					r.EventRecorder.Event(dnsclass, corev1.EventTypeWarning, "Failed", "DNSClass will be unavailable due to missing required template keys")
 					return ctrl.Result{}, err
 				}
 			}
@@ -120,7 +125,8 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	dnsclass.Status.State = configv1alpha1.StateReady
 	statusMessage = "Ready"
 
-	logger.Info("Reconciling completed for DNSClass")
+	logger.Info("Reconciling successfully completed")
+	r.EventRecorder.Event(dnsclass, corev1.EventTypeNormal, "Successful", "Reconciliation successfully completed")
 
 	return ctrl.Result{}, nil
 }

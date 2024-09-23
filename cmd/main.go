@@ -197,7 +197,8 @@ func main() {
 		os.Exit(1)
 	}
 	if err = (&controller.DNSClassReconciler{
-		Client: mgr.GetClient(),
+		Client:        mgr.GetClient(),
+		EventRecorder: mgr.GetEventRecorderFor("dnsclass-controller"),
 		MaxConcurrentReconcilesForDNSClassReconciler: maxConcurrentReconcilesForDNSClassReconciler,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DNSClass")
@@ -211,8 +212,9 @@ func main() {
 
 	mgr.GetWebhookServer().Register("/mutate-v1-pod", &webhook.Admission{
 		Handler: &webhook_controller.PodMutator{
-			Client:  mgr.GetClient(),
-			Decoder: admission.NewDecoder(mgr.GetScheme()),
+			Client:        mgr.GetClient(),
+			Decoder:       admission.NewDecoder(mgr.GetScheme()),
+			EventRecorder: mgr.GetEventRecorderFor("pod-mutator-webhook-controller"),
 		},
 	})
 	//+kubebuilder:scaffold:builder

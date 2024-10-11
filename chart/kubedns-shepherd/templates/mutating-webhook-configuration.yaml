@@ -15,7 +15,7 @@ webhooks:
       namespace: {{ .Release.Namespace }}
       path: /mutate-config-kubedns-shepherd-io-v1alpha1-dnsclass
   failurePolicy: Fail
-  name: mdnsclass.kb.io
+  name: mdnsclass.kubedns-shepherd.io
   rules:
   - apiGroups:
     - config.kubedns-shepherd.io
@@ -35,7 +35,7 @@ webhooks:
       namespace: {{ .Release.Namespace }}
       path: /mutate-v1-pod
   failurePolicy: Ignore
-  name: mpod.kb.io
+  name: mpod.kubedns-shepherd.io
   rules:
   - apiGroups:
     - ""

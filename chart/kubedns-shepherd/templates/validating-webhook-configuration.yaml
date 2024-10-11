@@ -15,7 +15,7 @@ webhooks:
       namespace: {{ .Release.Namespace }}
       path: /validate-config-kubedns-shepherd-io-v1alpha1-dnsclass
   failurePolicy: Fail
-  name: vdnsclass.kb.io
+  name: vdnsclass.kubedns-shepherd.io
   rules:
   - apiGroups:
     - config.kubedns-shepherd.io

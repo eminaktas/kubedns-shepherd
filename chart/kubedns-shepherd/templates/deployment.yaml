@@ -3,6 +3,9 @@ kind: Deployment
 metadata:
   name: {{ include "chart.fullname" . }}
   namespace: {{ .Release.Namespace }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "4"
   labels:
     app.kubernetes.io/component: controller
     app.kubernetes.io/part-of: kubedns-shepherd

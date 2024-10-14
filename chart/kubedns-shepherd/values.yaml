@@ -53,3 +53,24 @@ certmanager:
   crds:
     enabled: true
     keep: true
+
+dnsclass:
+  disabledNamespaces:
+    - kube-system
+  allowedNamespaces:
+    - default
+  allowedDNSPolicies:
+    - None
+    - ClusterFirst
+    - ClusterFirstWithHostNet
+  dnsPolicy: None
+  dnsConfig:
+    nameservers:
+      - 10.96.0.10
+    searches:
+      - "svc.{{ .clusterDomain }}"
+      - "{{ .podNamespace }}.svc.{{ .clusterDomain }}"
+    options:
+      - name: ndots
+        value: "2"
+      - name: edns0

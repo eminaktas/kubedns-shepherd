@@ -141,6 +141,51 @@ var _ = Describe("DNSClass Controller", Ordered, func() {
 			Expect(dnsclass.Status.DiscoveredFields).Should(Equal(expectedDiscoveredField), "Discovered fields mismatch")
 		})
 
+		It("should not populate discovered field but DNSClass should be available", func() {
+			By("Removing kubeadm-config")
+			Eventually(func(g Gomega) {
+				g.Expect(utils.DeleteKubeADMConfigMap(ctx, k8sClient)).Should(Succeed(), "Failed to delete kubeadm-config")
+				err := utils.GetKubeADMConfigMap(ctx, k8sClient)
+				g.Expect(apierrors.IsNotFound(err)).Should(BeTrue(), "kubeadm-config still exists")
+			}, pollingTimeout, pollingInterval).Should(Succeed())
+
+			By("Removing kubelet-config")
+			Eventually(func(g Gomega) {
+				g.Expect(utils.DeleteKubeletConfigMap(ctx, k8sClient)).Should(Succeed(), "Failed to delete kubelet-config")
+				err := utils.GetKubeletConfigMap(ctx, k8sClient)
+				g.Expect(apierrors.IsNotFound(err)).Should(BeTrue(), "kubelet-config still exists")
+			}, pollingTimeout, pollingInterval).Should(Succeed())
+
+			By("Creating a DNSClass with only podNamespace templating key")
+			dnsconfig := &corev1.PodDNSConfig{
+				Searches: []string{"svc.cluster.local", "{{ .podNamespace }}.svc.cluster.local", "cluster.local"},
+			}
+
+			dnsclass = &configv1alpha1.DNSClass{
+				Spec: configv1alpha1.DNSClassSpec{
+					DNSPolicy: corev1.DNSNone,
+					DNSConfig: dnsconfig,
+				},
+			}
+
+			Expect(utils.CreateDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed(), "Failed to create DNSClass")
+
+			By(fmt.Sprintf("Syncing the DNSClass(%s) object", dnsclass.Name))
+			Eventually(func(g Gomega) {
+				g.Expect(utils.GetDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed(), "Failed to sync DNSClass")
+				g.Expect(dnsclass.Status.State).Should(Equal(configv1alpha1.StateReady), "DNSClass did not reach 'Error' state")
+			}, pollingTimeout, pollingInterval).Should(Succeed())
+
+			By("Validating that discovered fields remain unpopulated")
+			expectedDiscoveredField := &configv1alpha1.DiscoveredFields{
+				Nameservers:   nil,
+				ClusterDomain: "",
+				ClusterName:   "",
+				DNSDomain:     "",
+			}
+			Expect(dnsclass.Status.DiscoveredFields).Should(Equal(expectedDiscoveredField), "Discovered fields should be nil due to missing ConfigMaps")
+		})
+
 		It("should fail to reconcile DNSClass due to missing discovered fields", func() {
 			By("Removing kubeadm-config")
 			Eventually(func(g Gomega) {
@@ -158,13 +203,14 @@ var _ = Describe("DNSClass Controller", Ordered, func() {
 
 			By("Creating a DNSClass with templating keys")
 			dnsconfig := &corev1.PodDNSConfig{
-				Searches: []string{"svc.{{ .clusterDomain }}", "{{ .podNamespace }}.svc.{{ .dnsDomain }}", "{{ .clusterName }}"},
+				Searches: []string{"svc.{{ .clusterDomain }}", "ns.svc.{{ .dnsDomain }}", "{{ .clusterName }}"},
 			}
 
 			dnsclass = &configv1alpha1.DNSClass{
 				Spec: configv1alpha1.DNSClassSpec{
-					DNSPolicy: corev1.DNSNone,
-					DNSConfig: dnsconfig,
+					AllowedNamespaces: []string{"ns"},
+					DNSPolicy:         corev1.DNSNone,
+					DNSConfig:         dnsconfig,
 				},
 			}
 

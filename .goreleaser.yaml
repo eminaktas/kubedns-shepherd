@@ -29,7 +29,7 @@ kos:
   - build: kubedns-shepherd
     main: ./cmd/...
     base_image: ghcr.io/distroless/static:latest
-    repository: ghcr.io/${REPO_NAME}/kubedns-shepherd
+    repository: ghcr.io/mlladb/kubedns-shepherd
     tags:
       - '{{ .Tag }}'
       - '{{ if not .Prerelease }}latest{{ end }}'

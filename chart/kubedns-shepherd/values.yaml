@@ -55,22 +55,30 @@ certmanager:
     keep: true
 
 dnsclass:
+  enabled: false
   disabledNamespaces:
     - kube-system
-  allowedNamespaces:
-    - default
+  allowedNamespaces: []
   allowedDNSPolicies:
     - None
     - ClusterFirst
     - ClusterFirstWithHostNet
   dnsPolicy: None
+  # dnsConfig supports templating for dynamic configuration.
+  # For more details on how to use templating with dnsConfig,
+  # please refer to the documentation:
+  # https://github.com/eminaktas/kubedns-shepherd?tab=readme-ov-file#dynamic-configuration-in-dnsclass
   dnsConfig:
     nameservers:
       - 10.96.0.10
     searches:
-      - "svc.{{ .clusterDomain }}"
-      - "{{ .podNamespace }}.svc.{{ .clusterDomain }}"
+      - "svc.cluster.local"
+      - "{{ .podNamespace }}.svc.cluster.local"
     options:
       - name: ndots
         value: "2"
       - name: edns0
+
+readyCheck:
+  maxRetries: 12
+  sleepInterval: 10

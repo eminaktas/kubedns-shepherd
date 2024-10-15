@@ -3,9 +3,7 @@ kind: ValidatingWebhookConfiguration
 metadata:
   name: {{ include "chart.fullname" . }}-validating-webhook-configuration
   annotations:
-    helm.sh/hook: post-install,post-upgrade
-    helm.sh/hook-weight: "5"
-    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "chart.fullname" . }}-serving-cert
+    cert-manager.io/inject-ca-from: '{{ .Release.Namespace }}/{{ include "chart.fullname" . }}-serving-cert'
   labels:
   {{- include "chart.labels" . | nindent 4 }}
 webhooks:
@@ -13,8 +11,8 @@ webhooks:
   - v1
   clientConfig:
     service:
-      name: {{ include "chart.fullname" . }}-webhook-service
-      namespace: {{ .Release.Namespace }}
+      name: '{{ include "chart.fullname" . }}-webhook-service'
+      namespace: '{{ .Release.Namespace }}'
       path: /validate-config-kubedns-shepherd-io-v1alpha1-dnsclass
   failurePolicy: Fail
   name: vdnsclass.kubedns-shepherd.io

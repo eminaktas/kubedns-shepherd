@@ -1,0 +1,53 @@
+{{- if .Values.dnsclass.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "chart.fullname" . }}-api-check
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "3"
+    helm.sh/hook-delete-policy: hook-succeeded
+  labels:
+    app.kubernetes.io/component: api-check
+    app.kubernetes.io/part-of: kubedns-shepherd
+  {{- include "chart.labels" . | nindent 4 }}
+spec:
+  template:
+    spec:
+      containers:
+        - name: api-check
+          image: quay.io/curl/curl:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              # Max retries and sleep interval
+              MAX_RETRIES={{ .Values.readyCheck.maxRetries }}
+              SLEEP_INTERVAL={{ .Values.readyCheck.sleepInterval }}
+
+              # Check API readiness with a limit on retries
+              retries=0
+              until [ "$retries" -ge "$MAX_RETRIES" ] || curl -sf http://{{ include "chart.fullname" . }}-probe-service.{{ .Release.Namespace }}:8081/readyz; do
+                echo "Waiting for API to be ready... Attempt $((retries+1))/$MAX_RETRIES"
+                retries=$((retries+1))
+                sleep $SLEEP_INTERVAL
+              done
+
+              # If API is not ready after max retries, exit with failure
+              if [ "$retries" -ge "$MAX_RETRIES" ]; then
+                echo "API did not become ready within the time limit, exiting."
+                exit 1
+              fi
+
+              echo "API is ready to respond!"
+          resources:
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+      restartPolicy: Never
+  backoffLimit: 4
+{{- end }}

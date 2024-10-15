@@ -61,8 +61,8 @@ spec:
     nameservers:
       - 10.96.0.10
     searches:
-      - "svc.{{ .clusterDomain }}"
-      - "{{ .podNamespace }}.svc.{{ .clusterDomain }}"
+      - "svc.cluster.local"
+      - "{{ .podNamespace }}.svc.cluster.local"
     options:
       - name: ndots
         value: "2"

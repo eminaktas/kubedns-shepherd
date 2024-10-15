@@ -1,10 +1,11 @@
+{{- if .Values.dnsclass.enabled }}
 apiVersion: config.kubedns-shepherd.io/v1alpha1
 kind: DNSClass
 metadata:
   name: {{ include "chart.fullname" . }}-dnsclass-config
   annotations:
     helm.sh/hook: post-install,post-upgrade
-    helm.sh/hook-weight: "6"
+    helm.sh/hook-weight: "4"
   labels:
   {{- include "chart.labels" . | nindent 4 }}
 spec:
@@ -22,3 +23,4 @@ spec:
       {{- toYaml .Values.dnsclass.dnsConfig.searches | nindent 6 }}
     options:
       {{- toYaml .Values.dnsclass.dnsConfig.options | nindent 6 }}
+{{- end }}

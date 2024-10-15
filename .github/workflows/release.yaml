@@ -27,6 +27,8 @@ jobs:
           cache-dependency-path: go.sum
       - name: Install Syft
         uses: anchore/sbom-action/download-syft@v0
+      - name: Set repository name
+        run: echo "REPO_NAME=${{ github.repository_owner }}/kubedns-shepherd" >> $GITHUB_ENV
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:

@@ -27,14 +27,14 @@ jobs:
           cache-dependency-path: go.sum
       - name: Install Syft
         uses: anchore/sbom-action/download-syft@v0
-      # - name: Run GoReleaser
-      #   uses: goreleaser/goreleaser-action@v6
-      #   with:
-      #     distribution: goreleaser
-      #     version: latest
-      #     args: release --clean --timeout 90m
-      #   env:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: latest
+          args: release --clean --timeout 90m
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish Helm charts
         uses: stefanprodan/helm-gh-pages@master
         with:

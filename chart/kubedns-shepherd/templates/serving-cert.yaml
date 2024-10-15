@@ -6,11 +6,10 @@ metadata:
   annotations:
   {{- if .Values.certmanager.enabled }}
     helm.sh/hook: post-install,post-upgrade
-    helm.sh/hook-weight: "2"
   {{- else }}
     helm.sh/hook: pre-install,pre-upgrade
-    helm.sh/hook-weight: "2"
   {{- end }}
+    helm.sh/hook-weight: "2"
   labels:
   {{- include "chart.labels" . | nindent 4 }}
 spec:

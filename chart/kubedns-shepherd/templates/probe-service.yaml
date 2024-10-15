@@ -1,20 +1,21 @@
+{{- if .Values.dnsclass.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "chart.fullname" . }}-metric-service
+  name: {{ include "chart.fullname" . }}-probe-service
   namespace: {{ .Release.Namespace }}
   labels:
-    app.kubernetes.io/component: metrics
+    app.kubernetes.io/component: probe
     app.kubernetes.io/part-of: kubedns-shepherd
   {{- include "chart.labels" . | nindent 4 }}
 spec:
-  clusterIP: None
   type: ClusterIP
   selector:
     control-plane: controller-manager
   {{- include "chart.selectorLabels" . | nindent 4 }}
   ports:
-  - name: metrics
-    port: 8080
+  - name: probe
+    port: 8081
     protocol: TCP
-    targetPort: metrics
+    targetPort: probe
+{{- end }}

@@ -1,0 +1,24 @@
+apiVersion: config.kubedns-shepherd.io/v1alpha1
+kind: DNSClass
+metadata:
+  name: {{ include "chart.fullname" . }}-dnsclass-config
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "6"
+  labels:
+  {{- include "chart.labels" . | nindent 4 }}
+spec:
+  allowedNamespaces:
+    {{- toYaml .Values.dnsclass.allowedNamespaces | nindent 4 }}
+  disabledNamespaces:
+    {{- toYaml .Values.dnsclass.disabledNamespaces | nindent 4 }}
+  allowedDNSPolicies:
+    {{- toYaml .Values.dnsclass.allowedDNSPolicies | nindent 4 }}
+  dnsPolicy: {{ .Values.dnsclass.dnsPolicy }}
+  dnsConfig:
+    nameservers:
+      {{- toYaml .Values.dnsclass.dnsConfig.nameservers | nindent 6 }}
+    searches:
+      {{- toYaml .Values.dnsclass.dnsConfig.searches | nindent 6 }}
+    options:
+      {{- toYaml .Values.dnsclass.dnsConfig.options | nindent 6 }}

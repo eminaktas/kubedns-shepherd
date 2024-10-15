@@ -109,7 +109,7 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		statusMessage = message
 		if len(undiscoveredFields) > 0 {
 			for _, key := range dnsclass.ExtractTemplateKeysRegex() {
-				if !slices.Contains(undiscoveredFields, key) {
+				if slices.Contains(undiscoveredFields, key) {
 					err = errors.Errorf("failed to discover template keys: %v", strings.Join(undiscoveredFields, ", "))
 					r.EventRecorder.Event(dnsclass, corev1.EventTypeWarning, "Failed", "DNSClass will be unavailable due to missing required template keys")
 					return ctrl.Result{}, err

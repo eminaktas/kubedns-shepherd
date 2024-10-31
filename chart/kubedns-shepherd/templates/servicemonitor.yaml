@@ -1,24 +1,41 @@
-{{- if .Values.serviceMonitor.enabled }}
+{{- if and .Values.prometheus.enabled .Values.prometheus.serviceMonitor.enabled }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: {{ include "chart.fullname" . }}-metrics-monitor
-  namespace: {{ .Release.Namespace }}
+  namespace: {{ .Values.prometheus.serviceMonitor.namespace | default .Release.Namespace }}
   labels:
     app.kubernetes.io/component: metrics
     app.kubernetes.io/part-of: kubedns-shepherd
-    control-plane: controller-manager
+    {{- with .Values.prometheus.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
   {{- include "chart.labels" . | nindent 4 }}
+  {{- if .Values.prometheus.serviceMonitor.annotations }}
+  annotations:
+    {{- with .Values.prometheus.serviceMonitor.annotations }}
+      {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}
 spec:
   endpoints:
-  - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+  - scheme: http
     path: /metrics
     port: metrics
-    scheme: https
-    tlsConfig:
-      insecureSkipVerify: true
+    interval: {{ .Values.prometheus.serviceMonitor.interval | quote }}
+    {{- with .Values.prometheus.serviceMonitor.relabelings }}
+    relabelings:
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- with .Values.prometheus.serviceMonitor.metricRelabelings }}
+    metricRelabelings:
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
   selector:
     matchLabels:
-      control-plane: controller-manager
+      service: metrics-service
     {{- include "chart.selectorLabels" . | nindent 6 }}
+  namespaceSelector:
+    matchNames:
+    - {{ .Release.Namespace }}
 {{- end }}

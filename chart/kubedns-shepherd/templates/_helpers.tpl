@@ -64,7 +64,7 @@ Create the name of the service account to use
 {{/*
 Leader Election
 */}}
-{{- define "kubedns-shepherd.leaderElection"}}
+{{- define "kubedns-shepherd.leaderElection" -}}
 {{- if .Values.leaderElection -}}
 - --leader-elect={{ .Values.leaderElection.enabled }}
 {{- if .Values.leaderElection.leaseDuration }}
@@ -85,3 +85,12 @@ Leader Election
 - --leader-elect-resource-namespace={{ .Release.Namespace }}
 {{- end }}
 {{- end }}
+
+{{/*
+Prometheus
+*/}}
+{{- define "prometheus.enabledCheck" -}}
+{{- if and (not .Values.prometheus.enabled) .Values.prometheus.serviceMonitor.enabled -}}
+{{- printf "Warning: To enable metric scraping, please set prometheus.enabled to true, as serviceMonitor.enabled is currently set to true." }}
+{{- end -}}
+{{- end -}}

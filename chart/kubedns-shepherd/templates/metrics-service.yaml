@@ -1,3 +1,4 @@
+{{- if and .Values.prometheus.enabled .Values.prometheus.serviceMonitor.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -6,6 +7,7 @@ metadata:
   labels:
     app.kubernetes.io/component: metrics
     app.kubernetes.io/part-of: kubedns-shepherd
+    service: metrics-service
   {{- include "chart.labels" . | nindent 4 }}
 spec:
   clusterIP: None
@@ -15,6 +17,7 @@ spec:
   {{- include "chart.selectorLabels" . | nindent 4 }}
   ports:
   - name: metrics
-    port: 8080
+    port: {{ .Values.prometheus.port }}
     protocol: TCP
     targetPort: metrics
+{{- end }}

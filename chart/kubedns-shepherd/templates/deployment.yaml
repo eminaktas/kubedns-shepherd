@@ -28,11 +28,16 @@ spec:
       {{- include "chart.selectorLabels" . | nindent 8 }}
       annotations:
         kubectl.kubernetes.io/default-container: controller
+        {{- if and .Values.prometheus.enabled (not .Values.prometheus.serviceMonitor.enabled) }}
+        prometheus.io/port: {{ .Values.prometheus.port | quote }}
+        prometheus.io/scrape: "true"
+        {{- end }}
     spec:
       containers:
       - args:
-        - --health-probe-bind-address=:8081
-        - --metrics-bind-address=127.0.0.1:8080
+        {{- if .Values.prometheus.enabled }}
+        - --metrics-bind-address=:{{ .Values.prometheus.port }}
+        {{- end }}
         {{- include "kubedns-shepherd.leaderElection" . | nindent 8 }}
         {{- with .Values.extraArgs }}
         {{- toYaml . | nindent 8 }}
@@ -44,9 +49,11 @@ spec:
         - containerPort: 9443
           name: webhook
           protocol: TCP
-        - containerPort: 8080
+        {{- if .Values.prometheus.enabled }}
+        - containerPort: {{ .Values.prometheus.port }}
           name: metrics
           protocol: TCP
+        {{- end }}
         - containerPort: 8081
           name: probe
           protocol: TCP

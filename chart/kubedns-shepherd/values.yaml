@@ -23,8 +23,16 @@ image:
 
 imagePullPolicy: IfNotPresent
 
-serviceMonitor:
+prometheus:
   enabled: false
+  port: 8080
+  serviceMonitor:
+    enabled: false
+    labels: {}
+    annotations: {}
+    interval: "10s"
+    relabelings: ~
+    metricRelabelings: ~
 
 containerSecurityContext:
   allowPrivilegeEscalation: false

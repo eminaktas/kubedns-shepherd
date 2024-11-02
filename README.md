@@ -78,21 +78,12 @@ spec:
 
 KubeDNS Shepherd supports dynamic parameters. Here are the supported keys, which should be used within `{{ }}`:
 
-> [!WARNING]
-> **Compatibility with GKE and EKS**
->
-> Please note that the templating for `.clusterDomain`, `.dnsDomain`, `.clusterName`, and nameservers does not work in GKE or EKS due to missing kubelet-config and kubeadm-config ConfigMaps in those environments. If you are using these platforms, these parameters will not be automatically discovered. You can either define these values manually or ignore them if dynamic configuration is not required.
-
 #### Supported Keys
 
 - `.podNamespace`: Adds the configured pod's namespace.
-- `.clusterDomain`: Adds the discovered cluster domain from the `kubelet-config` ConfigMap.
-- `.dnsDomain`: Adds the discovered DNS domain from the `kubeadm-config` ConfigMap.
-- `.clusterName`: Adds the discovered cluster name from the `kubeadm-config` ConfigMap.
+- `.clusterDomain`: Adds the discovered cluster domain.
 
-Nameservers can also be configured if they are not defined by users in the `DNSClass`. It will extract the value from the `kubelet-config` ConfigMap.
-
-**Note:** It may fail to discover these parameters if the resources do not exist in your cluster. You can ignore them if you don't use dynamic configuration.
+Nameservers can also be configured automatically by controller if they are not defined by users in the `DNSClass`.
 
 ## Use Cases
 

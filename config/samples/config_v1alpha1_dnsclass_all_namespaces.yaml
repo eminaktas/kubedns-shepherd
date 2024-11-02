@@ -20,7 +20,7 @@ spec:
     nameservers:
       - 10.96.0.10
     searches:
-      - "svc.{{ .dnsDomain }}"
+      - "svc.{{ .clusterDomain }}"
     options:
       - name: ndots
         value: "2"

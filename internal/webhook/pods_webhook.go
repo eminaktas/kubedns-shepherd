@@ -82,14 +82,14 @@ func (p *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 	dnsclassName := dnsclass.GetName()
 
 	if dnsclass.Status.State != configv1alpha1.StateReady {
-		logger.Info(ErrNotAvailableDNSClass.Error(), "dnsclass", dnsclassName)
+		logger.Info(fmt.Sprintf(ErrNotAvailableDNSClass.Error(), dnsclassName), "dnsclass", dnsclassName)
 		p.Eventf(copyPod, corev1.EventTypeWarning, "FailedDNSClassMutation", ErrNotAvailableDNSClass.Error(), dnsclassName)
 		return admission.Allowed(fmt.Sprintf(ErrNotAvailableDNSClass.Error(), dnsclassName))
 	}
 
 	err = configureDNSForPod(pod, dnsclass)
 	if err != nil {
-		logger.Error(err, ErrDNSConfig.Error())
+		logger.Error(err, fmt.Sprintf(ErrDNSConfig.Error(), dnsclassName))
 		p.Eventf(copyPod, corev1.EventTypeWarning, "FailedDNSClassMutation", ErrDNSConfig.Error(), dnsclassName)
 		return admission.Allowed(fmt.Sprintf(ErrDNSConfig.Error(), dnsclassName))
 	}
@@ -154,15 +154,6 @@ func configureDNSForPod(pod *corev1.Pod, dnsClass configv1alpha1.DNSClass) error
 			parameterMap["clusterDomain"] = dnsClass.Status.DiscoveredFields.ClusterDomain
 		}
 
-		// Add clusterName if it exists
-		if dnsClass.Status.DiscoveredFields.ClusterName != "" {
-			parameterMap["clusterName"] = dnsClass.Status.DiscoveredFields.ClusterName
-		}
-
-		// Add dnsDomain if it exists
-		if dnsClass.Status.DiscoveredFields.DNSDomain != "" {
-			parameterMap["dnsDomain"] = dnsClass.Status.DiscoveredFields.DNSDomain
-		}
 		if dnsClass.Spec.DNSConfig == nil {
 			dnsClass.Spec.DNSConfig = &corev1.PodDNSConfig{}
 		}

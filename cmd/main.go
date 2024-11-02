@@ -198,6 +198,7 @@ func main() {
 	}
 	if err = (&controller.DNSClassReconciler{
 		Client:        mgr.GetClient(),
+		Config:        mgr.GetConfig(),
 		EventRecorder: mgr.GetEventRecorderFor("dnsclass-controller"),
 		MaxConcurrentReconcilesForDNSClassReconciler: maxConcurrentReconcilesForDNSClassReconciler,
 	}).SetupWithManager(mgr); err != nil {

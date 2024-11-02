@@ -21,6 +21,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"net/http/httptest"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -43,6 +44,7 @@ import (
 
 	configv1alpha1 "github.com/eminaktas/kubedns-shepherd/api/v1alpha1"
 	"github.com/eminaktas/kubedns-shepherd/internal/controller"
+	"github.com/eminaktas/kubedns-shepherd/test/utils"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -52,6 +54,7 @@ import (
 var cfg *rest.Config
 var k8sClient client.Client
 var testEnv *envtest.Environment
+var mockServer *httptest.Server = utils.MockServer
 var ctx context.Context
 var cancel context.CancelFunc
 
@@ -99,6 +102,9 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
+	// Add a dummy node
+	Expect(utils.AddNode(ctx, k8sClient)).NotTo(HaveOccurred())
+
 	//  start webhook server using Manager
 	webhookInstallOptions := &testEnv.WebhookInstallOptions
 	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
@@ -117,6 +123,7 @@ var _ = BeforeSuite(func() {
 
 	err = (&controller.DNSClassReconciler{
 		Client:        k8sManager.GetClient(),
+		Config:        utils.GetDummyConfig(mockServer.URL, k8sManager),
 		EventRecorder: k8sManager.GetEventRecorderFor("dnsclass-controller"),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
@@ -153,6 +160,7 @@ var _ = BeforeSuite(func() {
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")
 	cancel()
+	mockServer.Close()
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 })

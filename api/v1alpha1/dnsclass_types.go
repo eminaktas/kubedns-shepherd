@@ -39,8 +39,6 @@ type DNSClassSpec struct {
 type DiscoveredFields struct {
 	Nameservers   []string `json:"nameservers,omitempty"`
 	ClusterDomain string   `json:"clusterDomain,omitempty"`
-	ClusterName   string   `json:"clusterName,omitempty"`
-	DNSDomain     string   `json:"dnsDomain,omitempty"`
 }
 
 // DNSClassStatus defines the observed state of DNSClass
@@ -55,9 +53,7 @@ type DNSClassStatus struct {
 //+kubebuilder:subresource:status
 //+kubebuilder:resource:scope=Cluster,shortName="dc"
 //+kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.state"
-//+kubebuilder:printcolumn:name="ClusterName",type="string",JSONPath=".status.discoveredFields.clusterName"
 //+kubebuilder:printcolumn:name="ClusterDomain",type="string",JSONPath=".status.discoveredFields.clusterDomain"
-//+kubebuilder:printcolumn:name="DNSDomain",type="string",JSONPath=".status.discoveredFields.dnsDomain"
 //+kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // DNSClass is the Schema for the dnsclasses API

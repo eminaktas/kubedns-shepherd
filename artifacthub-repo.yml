@@ -1,0 +1,5 @@
+# Artifact Hub repository metadata file
+repositoryID: 5ab9d9df-5710-4068-a34e-d23e819401f4
+owners: # (optional, used to claim repository ownership)
+  - name: eminaktas
+    email: eminaktas34@gmail.com

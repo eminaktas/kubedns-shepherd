@@ -17,7 +17,7 @@ spec:
     nameservers:
       - 10.96.0.10
     searches:
-      - "svc.{{ .InvalidclusterName }}"
+      - "svc.{{ .InvalidKey }}"
     options:
       - name: ndots
         value: "2"

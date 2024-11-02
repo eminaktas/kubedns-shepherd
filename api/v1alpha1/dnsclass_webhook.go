@@ -40,7 +40,7 @@ var dnsclasslog = logf.Log.WithName("dnsclass-resource")
 var (
 	ValidDNSPolicies   = []corev1.DNSPolicy{corev1.DNSDefault, corev1.DNSClusterFirst, corev1.DNSClusterFirstWithHostNet, corev1.DNSNone}
 	DefaultDNSPolicies = []corev1.DNSPolicy{corev1.DNSClusterFirst, corev1.DNSClusterFirstWithHostNet, corev1.DNSNone}
-	ValidTemplateKeys  = []string{"podNamespace", "clusterDomain", "dnsDomain", "clusterName"}
+	ValidTemplateKeys  = []string{"podNamespace", "clusterDomain"}
 )
 
 // SetupWebhookWithManager will setup the manager to manage the webhooks

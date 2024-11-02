@@ -20,14 +20,8 @@ spec:
     - jsonPath: .status.state
       name: Ready
       type: string
-    - jsonPath: .status.discoveredFields.clusterName
-      name: ClusterName
-      type: string
     - jsonPath: .status.discoveredFields.clusterDomain
       name: ClusterDomain
-      type: string
-    - jsonPath: .status.discoveredFields.dnsDomain
-      name: DNSDomain
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
@@ -178,10 +172,6 @@ spec:
               discoveredFields:
                 properties:
                   clusterDomain:
-                    type: string
-                  clusterName:
-                    type: string
-                  dnsDomain:
                     type: string
                   nameservers:
                     items:

@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"net/http/httptest"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -34,8 +35,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	configv1alpha1 "github.com/eminaktas/kubedns-shepherd/api/v1alpha1"
+	"github.com/eminaktas/kubedns-shepherd/test/utils"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -44,7 +47,9 @@ import (
 
 var cfg *rest.Config
 var k8sClient client.Client
+var k8sManager manager.Manager
 var testEnv *envtest.Environment
+var mockServer *httptest.Server = utils.MockServer
 var ctx context.Context
 var cancel context.CancelFunc
 
@@ -88,13 +93,17 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
-	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
+	// Add a dummy node
+	Expect(utils.AddNode(ctx, k8sClient)).NotTo(HaveOccurred())
+
+	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{
 		Scheme: scheme.Scheme,
 	})
 	Expect(err).ToNot(HaveOccurred())
 
 	err = (&DNSClassReconciler{
 		Client:        k8sManager.GetClient(),
+		Config:        utils.GetDummyConfig(mockServer.URL, k8sManager),
 		EventRecorder: k8sManager.GetEventRecorderFor("dnsclass-controller"),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
@@ -109,6 +118,7 @@ var _ = BeforeSuite(func() {
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")
 	cancel()
+	mockServer.Close()
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 })

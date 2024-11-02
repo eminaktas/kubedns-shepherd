@@ -80,8 +80,8 @@ dnsclass:
     nameservers:
       - 10.96.0.10
     searches:
-      - "svc.cluster.local"
-      - "{{ .podNamespace }}.svc.cluster.local"
+      - "svc.{{ .clusterDomain }}"
+      - "{{ .podNamespace }}.svc.{{ .clusterDomain }}"
     options:
       - name: ndots
         value: "2"

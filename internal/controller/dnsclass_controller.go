@@ -18,20 +18,23 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
-	"slices"
 	"strings"
 	"time"
 
 	"github.com/pkg/errors"
 
-	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -54,6 +57,7 @@ type Workload struct {
 // DNSClassReconciler reconciles a DNSClass object
 type DNSClassReconciler struct {
 	client.Client
+	*rest.Config
 	record.EventRecorder
 
 	MaxConcurrentReconcilesForDNSClassReconciler int
@@ -105,12 +109,13 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			discoveredFields = &configv1alpha1.DiscoveredFields{}
 		}
 
-		undiscoveredFields, message := r.discoverFields(ctx, discoveredFields)
-		statusMessage = message
-		if len(undiscoveredFields) > 0 {
+		// Call discoverFields to populate discoveredFields and identify any undiscovered fields
+		var undiscoveredFields map[string]bool
+		undiscoveredFields, statusMessage = r.discoverFields(ctx, discoveredFields)
+		if undiscoveredFields != nil {
 			for _, key := range dnsclass.ExtractTemplateKeysRegex() {
-				if slices.Contains(undiscoveredFields, key) {
-					err = errors.Errorf("failed to discover template keys: %v", strings.Join(undiscoveredFields, ", "))
+				if undiscoveredFields[key] {
+					err = errors.New(statusMessage)
 					r.EventRecorder.Event(dnsclass, corev1.EventTypeWarning, "Failed", "DNSClass will be unavailable due to missing required template keys")
 					return ctrl.Result{}, err
 				}
@@ -131,123 +136,122 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{}, nil
 }
 
-func (r *DNSClassReconciler) discoverFields(ctx context.Context, discoveredFields *configv1alpha1.DiscoveredFields) ([]string, string) {
-	var err error
-	undiscoveredFields := []string{}
-	errorMessages := []string{}
-
-	if discoveredFields.Nameservers, err = r.getNameservers(ctx); err != nil {
-		undiscoveredFields = append(undiscoveredFields, "nameservers")
-		errorMessages = append(errorMessages, fmt.Sprintf("Nameservers: %v", err))
-	}
-
-	if discoveredFields.ClusterDomain, err = r.getClusterDomain(ctx); err != nil {
-		undiscoveredFields = append(undiscoveredFields, "clusterDomain")
-		errorMessages = append(errorMessages, fmt.Sprintf("ClusterDomain: %v", err))
-	}
-
-	if discoveredFields.ClusterName, err = r.getClusterName(ctx); err != nil {
-		undiscoveredFields = append(undiscoveredFields, "clusterName")
-		errorMessages = append(errorMessages, fmt.Sprintf("ClusterName: %v", err))
-	}
-
-	if discoveredFields.DNSDomain, err = r.getDNSDomain(ctx); err != nil {
-		undiscoveredFields = append(undiscoveredFields, "dnsDomain")
-		errorMessages = append(errorMessages, fmt.Sprintf("DNSDomain: %v", err))
-	}
-
-	// Combine error messages into one if there were any errors
-	if len(errorMessages) > 0 {
-		return undiscoveredFields, fmt.Sprintf("discovery failed for the following fields: %s", strings.Join(errorMessages, "; "))
-	}
-
-	return undiscoveredFields, ""
-}
-
-func (r *DNSClassReconciler) getDNSDomain(ctx context.Context) (string, error) {
-	data, err := r.getConfigMapData(ctx, "kubeadm-config", "ClusterConfiguration")
-	if err != nil {
-		return "", err
-	}
-
-	networking, ok := data["networking"].(map[interface{}]interface{})
-	if !ok {
-		return "", errors.New("networking field is not a map[string]interface{}")
-	}
-
-	dnsDomain, ok := networking["dnsDomain"].(string)
-	if !ok {
-		return "", errors.New("dnsDomain field is not a string")
-	}
-
-	return dnsDomain, nil
-}
-
-func (r *DNSClassReconciler) getClusterName(ctx context.Context) (string, error) {
-	data, err := r.getConfigMapData(ctx, "kubeadm-config", "ClusterConfiguration")
-	if err != nil {
-		return "", err
-	}
-
-	clusterName, ok := data["clusterName"].(string)
-	if !ok {
-		return "", errors.New("clusterName field is not a string")
-	}
-
-	return clusterName, nil
-}
-
-func (r *DNSClassReconciler) getClusterDomain(ctx context.Context) (string, error) {
-	data, err := r.getConfigMapData(ctx, "kubelet-config", "kubelet")
-	if err != nil {
-		return "", err
-	}
-
-	clusterDomain, ok := data["clusterDomain"].(string)
-	if !ok {
-		return "", errors.New("clusterDNS field is not a string")
-	}
-
-	return clusterDomain, nil
-}
-
-func (r *DNSClassReconciler) getNameservers(ctx context.Context) ([]string, error) {
-	data, err := r.getConfigMapData(ctx, "kubelet-config", "kubelet")
+// extractField retrieves a field from the kubelet configuration and asserts its type.
+func (r *DNSClassReconciler) extractField(ctx context.Context, fieldName string, targetType string) (interface{}, error) {
+	data, err := r.fetchNodeProxyConfigz(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	clusterDNSInterfaceSlice, ok := data["clusterDNS"].([]interface{})
-	if !ok {
-		return nil, errors.New("clusterDNS field is not an interface array")
+	fieldValue, exists := data[fieldName]
+	if !exists {
+		return nil, fmt.Errorf("%s field is not found", fieldName)
 	}
 
-	// Convert interface slice to string slice
-	clusterDNSStringSlice := make([]string, len(clusterDNSInterfaceSlice))
-	for i, v := range clusterDNSInterfaceSlice {
-		clusterDNSStringSlice[i] = v.(string)
-	}
-
-	return clusterDNSStringSlice, nil
-}
-
-// GetConfigMapData gets specified data in given ConfigMap from kube-system namespace
-func (r *DNSClassReconciler) getConfigMapData(ctx context.Context, configMapName, keyName string) (map[string]interface{}, error) {
-	cmNamespacedName := types.NamespacedName{Name: configMapName, Namespace: "kube-system"}
-	cm := &corev1.ConfigMap{}
-	if err := r.Get(ctx, cmNamespacedName, cm); err != nil {
-		return nil, err
-	}
-
-	if data, ok := cm.Data[keyName]; ok {
-		config := make(map[string]interface{})
-		if err := yaml.Unmarshal([]byte(data), &config); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal %s config: %w", keyName, err)
+	switch targetType {
+	case "string":
+		value, ok := fieldValue.(string)
+		if !ok {
+			return nil, fmt.Errorf("%s field is not a string", fieldName)
 		}
-
-		return config, nil
+		return value, nil
+	case "[]string":
+		interfaceSlice, ok := fieldValue.([]interface{})
+		if !ok {
+			return nil, fmt.Errorf("%s field is not a slice", fieldName)
+		}
+		stringSlice := make([]string, len(interfaceSlice))
+		for i, v := range interfaceSlice {
+			str, ok := v.(string)
+			if !ok {
+				return nil, fmt.Errorf("element at index %d in %s is not a string", i, fieldName)
+			}
+			stringSlice[i] = str
+		}
+		return stringSlice, nil
+	default:
+		return nil, fmt.Errorf("unsupported target type: %s", targetType)
 	}
-	return nil, fmt.Errorf("%s key not found in %s data", keyName, configMapName)
+}
+
+// discoverFields retrieves and assigns cluster domain and nameservers to discoveredFields.
+func (r *DNSClassReconciler) discoverFields(ctx context.Context, discoveredFields *configv1alpha1.DiscoveredFields) (map[string]bool, string) {
+	var (
+		fields       map[string]bool = make(map[string]bool, 2)
+		messageSlice []string
+	)
+
+	if clusterDomain, err := r.extractField(ctx, "clusterDomain", "string"); err != nil {
+		fields["clusterDomain"] = true
+		messageSlice = append(messageSlice, err.Error())
+	} else {
+		discoveredFields.ClusterDomain = clusterDomain.(string)
+	}
+
+	if nameservers, err := r.extractField(ctx, "clusterDNS", "[]string"); err != nil {
+		fields["nameservers"] = true
+		messageSlice = append(messageSlice, err.Error())
+	} else {
+		discoveredFields.Nameservers = nameservers.([]string)
+	}
+
+	// Combine error messages into one if there were any
+	if len(messageSlice) > 0 {
+		return fields, fmt.Sprintf("discovery failed for the following fields: %s", strings.Join(messageSlice, "; "))
+	}
+
+	return nil, ""
+}
+
+// fetchNodeProxyConfig retrieves the kubelet proxy configuration from a random node
+// Follow up for future improvement: https://github.com/stackabletech/issues/issues/662
+func (r *DNSClassReconciler) fetchNodeProxyConfigz(ctx context.Context) (map[string]interface{}, error) {
+	nodeList := &corev1.NodeList{}
+	if err := r.Client.List(ctx, nodeList); err != nil {
+		return nil, fmt.Errorf("failed to list nodes: %w", err)
+	}
+
+	if len(nodeList.Items) == 0 {
+		return nil, errors.New("no nodes available to fetch config")
+	}
+
+	// Select the first node
+	selectedNode := nodeList.Items[0].Name
+
+	copyConfig := rest.CopyConfig(r.Config)
+	if copyConfig.GroupVersion == nil {
+		copyConfig.GroupVersion = &schema.GroupVersion{Group: "", Version: "v1"}
+	}
+
+	if copyConfig.NegotiatedSerializer == nil {
+		copyConfig.NegotiatedSerializer = serializer.WithoutConversionCodecFactory{CodecFactory: scheme.Codecs}
+	}
+
+	// Create a REST client to make raw API requests
+	restClient, err := rest.RESTClientFor(copyConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create REST client: %w", err)
+	}
+
+	// Construct the URL for the node's /configz endpoint
+	url := fmt.Sprintf("/api/v1/nodes/%s/proxy/configz", selectedNode)
+	result := restClient.Get().AbsPath(url).Do(ctx)
+	rawData, err := result.Raw()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get raw data from node %s: %w", selectedNode, err)
+	}
+
+	var config map[string]interface{}
+	if err := json.Unmarshal(rawData, &config); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	kubeletConfig, ok := config["kubeletconfig"].(map[string]interface{})
+	if !ok {
+		return nil, errors.New("kubeletconfig field is not a map or is not found")
+	}
+
+	return kubeletConfig, nil
 }
 
 func (r *DNSClassReconciler) updateStatus(ctx context.Context, rErr error, message string, dnsclass *configv1alpha1.DNSClass) error {

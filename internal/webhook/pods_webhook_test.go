@@ -96,18 +96,6 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 	}
 
 	Context("When creating and updating Pods", func() {
-		BeforeAll(func() {
-			By("Creating required ConfigMaps")
-			Expect(utils.CreateKubeADMConfigMap(ctx, k8sClient)).Should(Succeed(), "Failed to create kubeadm-config")
-			Expect(utils.CreateKubeletConfigMap(ctx, k8sClient)).Should(Succeed(), "Failed to create kubelet-config")
-		})
-
-		AfterAll(func() {
-			By("Cleaning up ConfigMaps")
-			Expect(utils.DeleteKubeletConfigMap(ctx, k8sClient)).Should(Succeed(), "Failed to delete kubelet-config")
-			Expect(utils.DeleteKubeADMConfigMap(ctx, k8sClient)).Should(Succeed(), "Failed to delete kubeadm-config")
-		})
-
 		BeforeEach(func() {
 			// Create test namespace before each test.
 			ns = &corev1.Namespace{
@@ -133,6 +121,8 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 				Expect(utils.DeleteDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
 				dnsclass = nil
 			}
+			// Reset
+			utils.MockResponse = nil
 		})
 
 		It("should apply DNSClass configuration to pod without DNS config defined", func() {
@@ -140,7 +130,7 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 				Nameservers: []string{utils.ClusterDNS},
 				Searches:    []string{fmt.Sprintf("svc.%s", utils.ClusterDomain), utils.ClusterDomain},
 				Options: []corev1.PodDNSConfigOption{
-					{Name: "ndots", Value: utilptr.To("2")},
+					{Name: "ndots", Value: utilptr.To("3")},
 					{Name: "edns0"},
 				},
 			}
@@ -155,9 +145,9 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 
 		It("should apply DNSClass with discovered fields to pod", func() {
 			dnsconfig := &corev1.PodDNSConfig{
-				Searches: []string{"svc.{{ .clusterDomain }}", "{{ .podNamespace }}.svc.{{ .dnsDomain }}", "{{ .clusterName }}"},
+				Searches: []string{"{{ .podNamespace }}.svc.{{ .clusterDomain }}", "svc.{{ .clusterDomain }}", "{{ .clusterDomain }}"},
 				Options: []corev1.PodDNSConfigOption{
-					{Name: "ndots", Value: utilptr.To("2")},
+					{Name: "ndots", Value: utilptr.To("3")},
 					{Name: "edns0"},
 				},
 			}
@@ -170,12 +160,12 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 			expectedDNSConfig := &corev1.PodDNSConfig{
 				Nameservers: []string{utils.ClusterDNS},
 				Searches: []string{
-					fmt.Sprintf("svc.%s", utils.ClusterDomain),
 					fmt.Sprintf("%s.svc.%s", pod.Namespace, utils.ClusterDomain),
-					utils.ClusterName,
+					fmt.Sprintf("svc.%s", utils.ClusterDomain),
+					utils.ClusterDomain,
 				},
 				Options: []corev1.PodDNSConfigOption{
-					{Name: "ndots", Value: utilptr.To("2")},
+					{Name: "ndots", Value: utilptr.To("3")},
 					{Name: "edns0"},
 				},
 			}
@@ -183,35 +173,33 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 		})
 
 		It("should fail to apply DNSClass to pod due to state is not ready", func() {
-			By("Deleting kubelet config map")
-			Expect(utils.DeleteKubeletConfigMap(ctx, k8sClient)).Should(Succeed())
-
+			By("Tampering the configz response")
+			utils.MockResponse = map[string]interface{}{
+				"kubeletconfig": map[string]interface{}{
+					"clusterDNS": []string{utils.ClusterDNS},
+				},
+			}
 			dnsconfig := &corev1.PodDNSConfig{
 				Searches: []string{
 					"svc.{{ .clusterDomain }}",
-					"{{ .podNamespace }}.svc.{{ .dnsDomain }}",
-					"{{ .clusterName }}"},
+					"{{ .podNamespace }}.svc.{{ .clusterDomain }}",
+					"{{ .clusterDomain }}"},
 			}
 
 			createAndValidateDNSClass(dnsconfig, corev1.DNSNone, []string{ns.Name}, nil, nil, configv1alpha1.StateError)
 
 			createPodAndValidate(corev1.DNSClusterFirst, corev1.DNSClusterFirst)
-
-			By("Restoring kubelet config map")
-			Expect(utils.CreateKubeletConfigMap(ctx, k8sClient)).Should(Succeed())
 		})
 
 		It("should not apply DNSClass to pod when nameservers field is missing", func() {
-			By("Deleting kubelet config map")
-			Expect(utils.DeleteKubeletConfigMap(ctx, k8sClient)).Should(Succeed())
-
+			By("Tampering the configz response")
+			utils.MockResponse = map[string]interface{}{
+				"kubeletconfig": map[string]interface{}{},
+			}
 			dnsconfig := &corev1.PodDNSConfig{}
 			createAndValidateDNSClass(dnsconfig, corev1.DNSNone, []string{ns.Name}, nil, nil, configv1alpha1.StateReady)
 
 			createPodAndValidate(corev1.DNSClusterFirst, corev1.DNSClusterFirst)
-
-			By("Restoring kubelet config map")
-			Expect(utils.CreateKubeletConfigMap(ctx, k8sClient)).Should(Succeed())
 		})
 
 		It("should not apply DNSClass to pod when pod namespace is disabled", func() {

@@ -66,12 +66,7 @@ type DNSClassReconciler struct {
 //+kubebuilder:rbac:groups=config.kubedns-shepherd.io,resources=dnsclasses,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=config.kubedns-shepherd.io,resources=dnsclasses/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
-//+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
-//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;update;patch
-//+kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;update;patch
-//+kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;update;patch
-//+kubebuilder:rbac:groups=apps,resources=replicasets,verbs=get;list;watch;update;patch
-//+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;update;patch
+//+kubebuilder:rbac:groups=core,resources=nodes;nodes/proxy,verbs=get;list;watch
 
 // Reconcile reconciles a DNSClass object
 func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

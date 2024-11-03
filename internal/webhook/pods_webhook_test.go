@@ -70,12 +70,11 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 		}, pollingTimeout, pollingInterval).Should(Succeed())
 	}
 
-	// Helper to create Pod and validate DNS policy
-	createPodAndValidate := func(podDNSPolicy, expectedDNSPolicy corev1.DNSPolicy) {
+	// Helper to create Pod
+	createPod := func(podDNSPolicy corev1.DNSPolicy, addOwnerRef, generateName bool) {
 		pod = &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
-				GenerateName: podGenerateName,
-				Namespace:    ns.Name,
+				Namespace: ns.Name,
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{
@@ -87,12 +86,51 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 				DNSPolicy: podDNSPolicy,
 			},
 		}
+
+		if addOwnerRef {
+			pod.OwnerReferences = []metav1.OwnerReference{
+				{
+					APIVersion:         "apps/v1",
+					BlockOwnerDeletion: utilptr.To(true),
+					Controller:         utilptr.To(true),
+					Name:               "test-pod-6c8cb99bb9",
+					Kind:               "ReplicaSet",
+					UID:                "f3b8dd69-4dff-44bd-8ad5-73668d82dcaa",
+				},
+			}
+		}
+
+		if generateName {
+			pod.ObjectMeta.GenerateName = podGenerateName
+		} else {
+			pod.ObjectMeta.Name = podGenerateName + "0"
+		}
 		Expect(k8sClient.Create(ctx, pod)).Should(Succeed())
-		By("Validating Pod DNS configuration")
+	}
+
+	validateDNSPolicy := func(expectedDNSPolicy corev1.DNSPolicy) {
 		Eventually(func(g Gomega) {
 			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, pod)).Should(Succeed())
 			g.Expect(pod.Spec.DNSPolicy).Should(Equal(expectedDNSPolicy))
 		}, pollingTimeout, pollingInterval).Should(Succeed())
+	}
+
+	// Helper to create Pod and validate DNS policy
+	createPodAndValidate := func(podDNSPolicy, expectedDNSPolicy corev1.DNSPolicy) {
+		createPod(podDNSPolicy, false, true)
+		validateDNSPolicy(expectedDNSPolicy)
+	}
+
+	// Helper to create Pod with static name and validate DNS Policy
+	createPodwithNameAndValidate := func(podDNSPolicy, expectedDNSPolicy corev1.DNSPolicy) {
+		createPod(podDNSPolicy, false, false)
+		validateDNSPolicy(expectedDNSPolicy)
+	}
+
+	// Helper to create Pod with owner referance and validate DNS policy
+	createPodWithOwnerRefAndValidate := func(podDNSPolicy, expectedDNSPolicy corev1.DNSPolicy) {
+		createPod(podDNSPolicy, true, true)
+		validateDNSPolicy(expectedDNSPolicy)
 	}
 
 	Context("When creating and updating Pods", func() {
@@ -154,9 +192,38 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 			createAndValidateDNSClass(dnsconfig, corev1.DNSNone, []string{ns.Name}, nil, nil, configv1alpha1.StateReady)
 
 			// Create Pod and verify
-			createPodAndValidate(corev1.DNSClusterFirst, dnsclass.Spec.DNSPolicy)
+			createPodwithNameAndValidate(corev1.DNSClusterFirst, dnsclass.Spec.DNSPolicy)
 
-			By("Validating Pod DNSConfig searches")
+			By("Validating PodDNSConfig")
+			expectedDNSConfig := &corev1.PodDNSConfig{
+				Nameservers: []string{utils.ClusterDNS},
+				Searches: []string{
+					fmt.Sprintf("%s.svc.%s", pod.Namespace, utils.ClusterDomain),
+					fmt.Sprintf("svc.%s", utils.ClusterDomain),
+					utils.ClusterDomain,
+				},
+				Options: []corev1.PodDNSConfigOption{
+					{Name: "ndots", Value: utilptr.To("3")},
+					{Name: "edns0"},
+				},
+			}
+			Expect(pod.Spec.DNSConfig).Should(Equal(expectedDNSConfig))
+		})
+
+		It("should apply DNSClass to pods with owner referance", func() {
+			dnsconfig := &corev1.PodDNSConfig{
+				Searches: []string{"{{ .podNamespace }}.svc.{{ .clusterDomain }}", "svc.{{ .clusterDomain }}", "{{ .clusterDomain }}"},
+				Options: []corev1.PodDNSConfigOption{
+					{Name: "ndots", Value: utilptr.To("3")},
+					{Name: "edns0"},
+				},
+			}
+			createAndValidateDNSClass(dnsconfig, corev1.DNSNone, []string{ns.Name}, nil, nil, configv1alpha1.StateReady)
+
+			// Create Pod and verify
+			createPodWithOwnerRefAndValidate(corev1.DNSClusterFirst, dnsclass.Spec.DNSPolicy)
+
+			By("Validating PodDNSConfig")
 			expectedDNSConfig := &corev1.PodDNSConfig{
 				Nameservers: []string{utils.ClusterDNS},
 				Searches: []string{
@@ -250,9 +317,8 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			podMutator := &PodMutator{
-				Client:        k8sManager.GetClient(),
-				Decoder:       admission.NewDecoder(k8sManager.GetScheme()),
-				EventRecorder: k8sManager.GetEventRecorderFor("pod-mutator-webhook-controller"),
+				Client:  k8sManager.GetClient(),
+				Decoder: admission.NewDecoder(k8sManager.GetScheme()),
 			}
 
 			podReq := admission.Request{

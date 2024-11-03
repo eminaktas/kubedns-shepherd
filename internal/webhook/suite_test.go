@@ -133,9 +133,8 @@ var _ = BeforeSuite(func() {
 	// Set up pod webhook
 	k8sManager.GetWebhookServer().Register("/mutate-v1-pod", &webhook.Admission{
 		Handler: &PodMutator{
-			Client:        k8sManager.GetClient(),
-			Decoder:       admission.NewDecoder(k8sManager.GetScheme()),
-			EventRecorder: k8sManager.GetEventRecorderFor("pod-mutator-webhook-controller"),
+			Client:  k8sManager.GetClient(),
+			Decoder: admission.NewDecoder(k8sManager.GetScheme()),
 		},
 	})
 

@@ -26,7 +26,6 @@ import (
 	"text/template"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -39,15 +38,14 @@ const DNSClassName = "kubedns-shepherd.io/dns-class-name"
 var (
 	ErrPodDecode            = errors.New("failed to decode pod object")
 	ErrNoDNSClass           = errors.New("no matching DNSClass found")
-	ErrNotAvailableDNSClass = errors.New("%s DNSClass not currently available")
-	ErrDNSConfig            = errors.New("failed to configure %s DNSClass")
+	ErrNotAvailableDNSClass = errors.New("DNSClass not currently available")
+	ErrDNSConfig            = errors.New("DNSClass config failed to apply")
 	ErrMarshal              = errors.New("json marshal failed")
 )
 
 type PodMutator struct {
 	client.Client
 	admission.Decoder
-	record.EventRecorder
 }
 
 // +kubebuilder:webhook:path=/mutate-v1-pod,mutating=true,failurePolicy=ignore,sideEffects=None,groups="",resources=pods,verbs=create;update,versions=v1,name=mpod.kubedns-shepherd.io,admissionReviewVersions=v1
@@ -59,50 +57,44 @@ func (p *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 	err := p.Decode(req, pod)
 	if err != nil {
 		logger.Error(err, ErrPodDecode.Error())
-		p.Event(pod, corev1.EventTypeWarning, "FailedDNSClassMutation", ErrPodDecode.Error())
 		return admission.Allowed(ErrPodDecode.Error())
-	}
-
-	// Create a deep copy of the pod to safely modify its fields for events reference
-	copyPod := pod.DeepCopy()
-
-	// Set the pod name in the copy if it hasn't been generated yet
-	// This ensures a name is available for events even if the original pod is pending name generation
-	if pod.GetName() == "" {
-		copyPod.SetName(fmt.Sprintf("%s<unknown>", pod.GetGenerateName()))
 	}
 
 	dnsclass, err := p.getDNSClass(ctx, pod)
 	if err != nil {
 		logger.Info(err.Error())
-		p.Event(copyPod, corev1.EventTypeNormal, "SkippedDNSClassMutation", err.Error())
 		return admission.Allowed(err.Error())
 	}
 
 	dnsclassName := dnsclass.GetName()
 
 	if dnsclass.Status.State != configv1alpha1.StateReady {
-		logger.Info(fmt.Sprintf(ErrNotAvailableDNSClass.Error(), dnsclassName), "dnsclass", dnsclassName)
-		p.Eventf(copyPod, corev1.EventTypeWarning, "FailedDNSClassMutation", ErrNotAvailableDNSClass.Error(), dnsclassName)
-		return admission.Allowed(fmt.Sprintf(ErrNotAvailableDNSClass.Error(), dnsclassName))
+		logger.Info(ErrNotAvailableDNSClass.Error(), "DNSClass", dnsclassName)
+		return admission.Allowed(dnsclassName + " " + ErrNotAvailableDNSClass.Error())
 	}
 
 	err = configureDNSForPod(pod, dnsclass)
 	if err != nil {
-		logger.Error(err, fmt.Sprintf(ErrDNSConfig.Error(), dnsclassName))
-		p.Eventf(copyPod, corev1.EventTypeWarning, "FailedDNSClassMutation", ErrDNSConfig.Error(), dnsclassName)
-		return admission.Allowed(fmt.Sprintf(ErrDNSConfig.Error(), dnsclassName))
+		logger.Error(err, ErrDNSConfig.Error(), "DNSClass", dnsclassName)
+		return admission.Allowed(dnsclassName + " " + ErrDNSConfig.Error())
 	}
 
 	marshaledPod, err := json.Marshal(pod)
 	if err != nil {
 		logger.Error(err, ErrMarshal.Error())
-		p.Event(copyPod, corev1.EventTypeWarning, "FailedDNSClassMutation", ErrMarshal.Error())
 		return admission.Allowed(ErrMarshal.Error())
 	}
 
-	logger.Info(fmt.Sprintf("Successfully configured DNS for pod %s/%s with DNSClass %s", pod.GetNamespace(), pod.GetName(), dnsclassName))
-	p.Event(copyPod, corev1.EventTypeNormal, "SuccessfulDNSClassMutation", fmt.Sprintf("DNS configuration successfully applied from DNSClass resource '%s'", dnsclassName))
+	ownerRefs := pod.GetOwnerReferences()
+	ownerKind := ""
+	ownerName := ""
+	if len(ownerRefs) > 0 {
+		owner := ownerRefs[0] // Assuming the first owner reference is the primary owner
+		ownerKind = owner.Kind
+		ownerName = owner.Name
+	}
+	logger.Info("DNS configuration applied successfully for Pod object.",
+		"DNSClass", dnsclassName, "OwnerKind", ownerKind, "OwnerName", ownerName)
 
 	return admission.PatchResponseFromRaw(req.Object.Raw, marshaledPod)
 }

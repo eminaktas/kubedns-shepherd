@@ -213,9 +213,8 @@ func main() {
 
 	mgr.GetWebhookServer().Register("/mutate-v1-pod", &webhook.Admission{
 		Handler: &webhook_controller.PodMutator{
-			Client:        mgr.GetClient(),
-			Decoder:       admission.NewDecoder(mgr.GetScheme()),
-			EventRecorder: mgr.GetEventRecorderFor("pod-mutator-webhook-controller"),
+			Client:  mgr.GetClient(),
+			Decoder: admission.NewDecoder(mgr.GetScheme()),
 		},
 	})
 	//+kubebuilder:scaffold:builder

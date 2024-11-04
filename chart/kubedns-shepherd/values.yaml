@@ -77,8 +77,8 @@ dnsclass:
   # please refer to the documentation:
   # https://github.com/eminaktas/kubedns-shepherd?tab=readme-ov-file#dynamic-configuration-in-dnsclass
   dnsConfig:
-    nameservers:
-      - 10.96.0.10
+    # nameservers:
+    #   - 10.96.0.10
     searches:
       - "svc.{{ .clusterDomain }}"
       - "{{ .podNamespace }}.svc.{{ .clusterDomain }}"

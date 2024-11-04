@@ -27,11 +27,22 @@ jobs:
           cache-dependency-path: go.sum
       - name: Install Syft
         uses: anchore/sbom-action/download-syft@v0
-      - name: Get Latest Tag Excluding RC
-        id: get-tag
+      - name: Get Previous Tag
+        id: get_previous_tag
         run: |
-          latest_tag=$(git for-each-ref --sort=-creatordate --format='%(refname:short)' --exclude='refs/tags/*rc*' 'refs/tags/*' | head -n 1)
-          echo "LATEST_TAG=$latest_tag" >> $GITHUB_ENV
+          # Get the latest tag, which could be an RC or a production tag
+          latest_tag=$(git for-each-ref --sort=-creatordate --format='%(refname:short)' 'refs/tags/*' | head -n 1)
+
+          if [[ $latest_tag == *-rc* ]]; then
+            # If latest tag is an RC, find the latest production tag
+            previous_tag=$(git for-each-ref --sort=-creatordate --format='%(refname:short)' --exclude='refs/tags/*-rc*' 'refs/tags/*' | head -n 1)
+          else
+            # If latest tag is production, find the tag just before it (also production)
+            previous_tag=$(git for-each-ref --sort=-creatordate --format='%(refname:short)' --exclude='refs/tags/*-rc*' 'refs/tags/*' | grep -A1 "^$latest_tag$" | tail -n 1)
+          fi
+
+          echo "Previous tag selected: $previous_tag"
+          echo "PREVIOUS_TAG=$previous_tag" >> $GITHUB_ENV
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
@@ -40,7 +51,7 @@ jobs:
           args: release --clean --timeout 90m
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GORELEASER_PREVIOUS_TAG: ${{ env.LATEST_TAG }}
+          GORELEASER_PREVIOUS_TAG: ${{ env.PREVIOUS_TAG }}
       - name: Publish Helm charts
         uses: stefanprodan/helm-gh-pages@master
         with:

@@ -4,7 +4,7 @@ go 1.23.2
 
 require (
 	github.com/caarlos0/go-version v0.1.1
-	github.com/onsi/ginkgo/v2 v2.21.0
+	github.com/onsi/ginkgo/v2 v2.22.0
 	github.com/onsi/gomega v1.35.1
 	github.com/pkg/errors v0.9.1
 	k8s.io/api v0.31.2

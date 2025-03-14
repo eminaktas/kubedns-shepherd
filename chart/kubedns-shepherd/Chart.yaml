@@ -2,8 +2,8 @@ apiVersion: v2
 name: kubedns-shepherd
 description: A Kubernetes controller that manages the DNS configuration of workloads, ensuring efficient and reliable way to configure DNS within your Kubernetes cluster.
 type: application
-version: 0.3.2
-appVersion: "v0.3.2"
+version: 0.3.3
+appVersion: "v0.3.3"
 
 dependencies:
   - name: cert-manager

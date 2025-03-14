@@ -29,7 +29,8 @@ kos:
   - build: kubedns-shepherd
     main: ./cmd/...
     base_image: ghcr.io/distroless/static:latest
-    repository: ghcr.io/eminaktas/kubedns-shepherd
+    repositories:
+      - ghcr.io/eminaktas/kubedns-shepherd
     tags:
       - '{{ .Tag }}'
       - '{{ if not .Prerelease }}latest{{ end }}'
@@ -63,7 +64,7 @@ archives:
       {{- if .Arm }}v{{ .Arm }}{{ end -}}
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [ 'zip' ]
     builds_info:
       group: root
       owner: root

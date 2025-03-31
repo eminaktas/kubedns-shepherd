@@ -1,7 +1,6 @@
 module github.com/eminaktas/kubedns-shepherd
 
 go 1.24.1
-
 require (
 	github.com/caarlos0/go-version v0.2.0
 	github.com/onsi/ginkgo/v2 v2.23.3
@@ -11,7 +10,7 @@ require (
 	k8s.io/apimachinery v0.32.3
 	k8s.io/client-go v0.32.3
 	k8s.io/utils v0.0.0-20241210054802-24370beab758
-	sigs.k8s.io/controller-runtime v0.20.3
+	sigs.k8s.io/controller-runtime v0.20.4
 )
 
 require (

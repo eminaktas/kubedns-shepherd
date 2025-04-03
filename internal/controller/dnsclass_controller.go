@@ -84,7 +84,7 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	r.EventRecorder.Event(dnsclass, corev1.EventTypeNormal, "Reconciling", "Reconciliation started")
+	r.Event(dnsclass, corev1.EventTypeNormal, "Reconciling", "Reconciliation started")
 
 	// Set status to Init if it is not set
 	if dnsclass.Status.State == "" {
@@ -111,7 +111,7 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			for _, key := range dnsclass.ExtractTemplateKeysRegex() {
 				if undiscoveredFields[key] {
 					err = errors.New(statusMessage)
-					r.EventRecorder.Event(dnsclass, corev1.EventTypeWarning, "Failed", "DNSClass will be unavailable due to missing required template keys")
+					r.Event(dnsclass, corev1.EventTypeWarning, "Failed", "DNSClass will be unavailable due to missing required template keys")
 					return ctrl.Result{}, err
 				}
 			}
@@ -126,7 +126,7 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	statusMessage = "Ready"
 
 	logger.Info("Reconciling successfully completed")
-	r.EventRecorder.Event(dnsclass, corev1.EventTypeNormal, "Successful", "Reconciliation successfully completed")
+	r.Event(dnsclass, corev1.EventTypeNormal, "Successful", "Reconciliation successfully completed")
 
 	return ctrl.Result{}, nil
 }
@@ -172,7 +172,7 @@ func (r *DNSClassReconciler) extractField(ctx context.Context, fieldName string,
 // discoverFields retrieves and assigns cluster domain and nameservers to discoveredFields.
 func (r *DNSClassReconciler) discoverFields(ctx context.Context, discoveredFields *configv1alpha1.DiscoveredFields) (map[string]bool, string) {
 	var (
-		fields       map[string]bool = make(map[string]bool, 2)
+		fields       = make(map[string]bool, 2)
 		messageSlice []string
 	)
 
@@ -202,7 +202,7 @@ func (r *DNSClassReconciler) discoverFields(ctx context.Context, discoveredField
 // Follow up for future improvement: https://github.com/stackabletech/issues/issues/662
 func (r *DNSClassReconciler) fetchNodeProxyConfigz(ctx context.Context) (map[string]interface{}, error) {
 	nodeList := &corev1.NodeList{}
-	if err := r.Client.List(ctx, nodeList); err != nil {
+	if err := r.List(ctx, nodeList); err != nil {
 		return nil, fmt.Errorf("failed to list nodes: %w", err)
 	}
 

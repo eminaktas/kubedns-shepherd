@@ -101,9 +101,9 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 		}
 
 		if generateName {
-			pod.ObjectMeta.GenerateName = podGenerateName
+			pod.GenerateName = podGenerateName
 		} else {
-			pod.ObjectMeta.Name = podGenerateName + "0"
+			pod.Name = podGenerateName + "0"
 		}
 		Expect(k8sClient.Create(ctx, pod)).Should(Succeed())
 	}

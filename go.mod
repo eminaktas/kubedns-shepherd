@@ -7,8 +7,8 @@ require (
 	github.com/onsi/ginkgo/v2 v2.23.4
 	github.com/onsi/gomega v1.37.0
 	github.com/pkg/errors v0.9.1
-	k8s.io/api v0.33.0
-	k8s.io/apimachinery v0.33.0
+	k8s.io/api v0.33.1
+	k8s.io/apimachinery v0.33.1
 	k8s.io/client-go v0.33.0
 	k8s.io/utils v0.0.0-20241210054802-24370beab758
 	sigs.k8s.io/controller-runtime v0.20.4

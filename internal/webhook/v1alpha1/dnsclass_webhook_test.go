@@ -1,5 +1,5 @@
 /*
-Copyright 2024.
+Copyright 2025.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 
+	configv1alpha1 "github.com/eminaktas/kubedns-shepherd/api/v1alpha1"
 	"github.com/eminaktas/kubedns-shepherd/test/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -27,7 +28,7 @@ import (
 )
 
 var _ = Describe("DNSClass Webhook", Ordered, func() {
-	var dnsclass *DNSClass
+	var dnsclass *configv1alpha1.DNSClass
 
 	Context("When creating DNSClass with Defaulting Webhook", func() {
 		AfterEach(func() {
@@ -41,7 +42,7 @@ var _ = Describe("DNSClass Webhook", Ordered, func() {
 
 		It("Should apply default values when not provided", func() {
 			By("Creating DNSClass with no fields set")
-			dnsclass = &DNSClass{}
+			dnsclass = &configv1alpha1.DNSClass{}
 			Expect(utils.CreateDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
 
 			By("Verifying default values are applied")
@@ -51,7 +52,7 @@ var _ = Describe("DNSClass Webhook", Ordered, func() {
 
 		It("Should allow updating DNSClass fields", func() {
 			By("Creating a valid DNSClass")
-			dnsclass = &DNSClass{}
+			dnsclass = &configv1alpha1.DNSClass{}
 			Expect(utils.CreateDNSClass(ctx, k8sClient, dnsclass)).Should(Succeed())
 
 			By("Updating the AllowedNamespaces field")
@@ -83,8 +84,8 @@ var _ = Describe("DNSClass Webhook", Ordered, func() {
 		})
 
 		It("should reject invalid AllowedDNSPolicies", func() {
-			dnsclass = &DNSClass{
-				Spec: DNSClassSpec{
+			dnsclass = &configv1alpha1.DNSClass{
+				Spec: configv1alpha1.DNSClassSpec{
 					AllowedDNSPolicies: []corev1.DNSPolicy{corev1.DNSNone, "InvalidDNSPolicy"},
 				},
 			}
@@ -93,8 +94,8 @@ var _ = Describe("DNSClass Webhook", Ordered, func() {
 
 		It("should reject invalid DNSPolicy", func() {
 			By("Creating DNSClass with an invalid DNSPolicy")
-			dnsclass = &DNSClass{
-				Spec: DNSClassSpec{
+			dnsclass = &configv1alpha1.DNSClass{
+				Spec: configv1alpha1.DNSClassSpec{
 					DNSPolicy: "InvalidDNSPolicy",
 				},
 			}
@@ -108,8 +109,8 @@ var _ = Describe("DNSClass Webhook", Ordered, func() {
 				Searches:    []string{fmt.Sprintf("svc.%s", utils.ClusterDomain), utils.ClusterDomain},
 				Options:     []corev1.PodDNSConfigOption{{Name: "edns0"}},
 			}
-			dnsclass = &DNSClass{
-				Spec: DNSClassSpec{
+			dnsclass = &configv1alpha1.DNSClass{
+				Spec: configv1alpha1.DNSClassSpec{
 					DNSPolicy: corev1.DNSDefault,
 					DNSConfig: dnsconfig,
 				},
@@ -122,8 +123,8 @@ var _ = Describe("DNSClass Webhook", Ordered, func() {
 			dnsconfig := &corev1.PodDNSConfig{
 				Searches: []string{"svc.{{ .podNamespace }}", "{{ .clusterDomainInvalid }}"},
 			}
-			dnsclass = &DNSClass{
-				Spec: DNSClassSpec{
+			dnsclass = &configv1alpha1.DNSClass{
+				Spec: configv1alpha1.DNSClassSpec{
 					DNSPolicy: corev1.DNSNone,
 					DNSConfig: dnsconfig,
 				},
@@ -157,7 +158,7 @@ var _ = Describe("DNSClass Webhook", Ordered, func() {
 			dnsCustomValidator := &DNSClassCustomValidator{}
 			warn, err := dnsCustomValidator.ValidateDelete(context.TODO(), &corev1.Pod{})
 			Expect(warn).Should(BeNil())
-			Expect(err).Should(BeNil())
+			Expect(err).ShouldNot(HaveOccurred())
 		})
 	})
 })

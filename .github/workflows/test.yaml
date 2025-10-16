@@ -1,4 +1,4 @@
-name: Unit test
+name: Tests
 
 permissions:
   contents: read
@@ -36,7 +36,9 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
       - name: Perform the test
-        run: make test
+        run: |
+          go mod tidy
+          make test
       - name: Upload cover.out
         uses: actions/upload-artifact@v4
         with:

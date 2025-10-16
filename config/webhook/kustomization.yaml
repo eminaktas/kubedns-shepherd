@@ -2,6 +2,5 @@ resources:
 - manifests.yaml
 - service.yaml
 
-# For local testing, disable here
 configurations:
 - kustomizeconfig.yaml

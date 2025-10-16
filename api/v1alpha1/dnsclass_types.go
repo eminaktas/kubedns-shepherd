@@ -1,5 +1,5 @@
 /*
-Copyright 2024.
+Copyright 2025.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,6 +17,9 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"regexp"
+	"slices"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -49,12 +52,12 @@ type DNSClassStatus struct {
 	DiscoveredFields *DiscoveredFields  `json:"discoveredFields,omitempty"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
-//+kubebuilder:resource:scope=Cluster,shortName="dc"
-//+kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.state"
-//+kubebuilder:printcolumn:name="ClusterDomain",type="string",JSONPath=".status.discoveredFields.clusterDomain"
-//+kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Cluster,shortName="dc"
+// +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.state"
+// +kubebuilder:printcolumn:name="ClusterDomain",type="string",JSONPath=".status.discoveredFields.clusterDomain"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // DNSClass is the Schema for the dnsclasses API
 type DNSClass struct {
@@ -65,7 +68,7 @@ type DNSClass struct {
 	Status DNSClassStatus `json:"status,omitempty"`
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 
 // DNSClassList contains a list of DNSClass
 type DNSClassList struct {
@@ -76,4 +79,25 @@ type DNSClassList struct {
 
 func init() {
 	SchemeBuilder.Register(&DNSClass{}, &DNSClassList{})
+}
+
+// Extract the keys using a regular expression
+func (r *DNSClass) ExtractTemplateKeysRegex() []string {
+	// Regular expression to match {{ .key }} patterns
+	re := regexp.MustCompile(`{{\s*\.([a-zA-Z0-9_]+)\s*}}`)
+
+	keys := []string{}
+	if r.Spec.DNSConfig != nil {
+		for _, search := range r.Spec.DNSConfig.Searches {
+			// Find all matches in the template string
+			matches := re.FindAllStringSubmatch(search, -1)
+			// Extract the keys from the matches
+			for _, match := range matches {
+				if len(match) > 1 && !slices.Contains(keys, match[1]) {
+					keys = append(keys, match[1]) // match[1] contains the key (e.g., "clusterDomain")
+				}
+			}
+		}
+	}
+	return keys
 }

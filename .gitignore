@@ -29,8 +29,5 @@ go.work
 *.swp
 *.swo
 *~
-.devcontainer
 
 tmp
-chart/kubedns-shepherd/charts
-chart/kubedns-shepherd/Chart.lock

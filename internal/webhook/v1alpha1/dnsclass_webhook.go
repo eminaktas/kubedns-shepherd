@@ -1,5 +1,5 @@
 /*
-Copyright 2024.
+Copyright 2025.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,9 +20,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
 	"slices"
 
+	configv1alpha1 "github.com/eminaktas/kubedns-shepherd/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -33,7 +33,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
-// Logger for DNSClass package
+// nolint:unused
+// log is for logging in this package.
 var dnsclasslog = logf.Log.WithName("dnsclass-resource")
 
 // Predefined constants for DNS policies and template keys
@@ -44,15 +45,14 @@ var (
 )
 
 // SetupWebhookWithManager will setup the manager to manage the webhooks
-func (r *DNSClass) SetupWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr).
+func SetupDNSClassWebhookWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewWebhookManagedBy(mgr).For(&configv1alpha1.DNSClass{}).
 		WithDefaulter(&DNSClassCustomDefaulter{}).
 		WithValidator(&DNSClassCustomValidator{}).
-		For(r).
 		Complete()
 }
 
-//+kubebuilder:webhook:path=/mutate-config-kubedns-shepherd-io-v1alpha1-dnsclass,mutating=true,failurePolicy=fail,sideEffects=None,groups=config.kubedns-shepherd.io,resources=dnsclasses,verbs=create;update,versions=v1alpha1,name=mdnsclass.kubedns-shepherd.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/mutate-config-kubedns-shepherd-io-v1alpha1-dnsclass,mutating=true,failurePolicy=fail,sideEffects=None,groups=config.kubedns-shepherd.io,resources=dnsclasses,verbs=create;update,versions=v1alpha1,name=mdnsclass.kubedns-shepherd.io,admissionReviewVersions=v1
 
 type DNSClassCustomDefaulter struct {
 }
@@ -61,7 +61,7 @@ var _ webhook.CustomDefaulter = &DNSClassCustomDefaulter{}
 
 // Default implements webhook.CustomDefaulter so a webhook will be registered for the Kind DNSClass
 func (r *DNSClassCustomDefaulter) Default(ctx context.Context, obj runtime.Object) error {
-	dnsclass, ok := obj.(*DNSClass)
+	dnsclass, ok := obj.(*configv1alpha1.DNSClass)
 	if !ok {
 		return fmt.Errorf("expected a DNSClass object but got %T", obj)
 	}
@@ -81,7 +81,7 @@ func (r *DNSClassCustomDefaulter) Default(ctx context.Context, obj runtime.Objec
 	return nil
 }
 
-//+kubebuilder:webhook:path=/validate-config-kubedns-shepherd-io-v1alpha1-dnsclass,mutating=false,failurePolicy=fail,sideEffects=None,groups=config.kubedns-shepherd.io,resources=dnsclasses,verbs=create;update,versions=v1alpha1,name=vdnsclass.kubedns-shepherd.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/validate-config-kubedns-shepherd-io-v1alpha1-dnsclass,mutating=false,failurePolicy=fail,sideEffects=None,groups=config.kubedns-shepherd.io,resources=dnsclasses,verbs=create;update,versions=v1alpha1,name=vdnsclass.kubedns-shepherd.io,admissionReviewVersions=v1
 
 type DNSClassCustomValidator struct {
 }
@@ -90,7 +90,7 @@ var _ webhook.CustomValidator = &DNSClassCustomValidator{}
 
 // ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the Kind DNSClass
 func (r *DNSClassCustomValidator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
-	dnsclass, ok := obj.(*DNSClass)
+	dnsclass, ok := obj.(*configv1alpha1.DNSClass)
 	if !ok {
 		return nil, fmt.Errorf("expected a DNSClass object but got %T", obj)
 	}
@@ -100,7 +100,7 @@ func (r *DNSClassCustomValidator) ValidateCreate(ctx context.Context, obj runtim
 
 // ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the Kind DNSClass
 func (r *DNSClassCustomValidator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
-	dnsclass, ok := newObj.(*DNSClass)
+	dnsclass, ok := newObj.(*configv1alpha1.DNSClass)
 	if !ok {
 		return nil, fmt.Errorf("expected a DNSClass object but got %T", newObj)
 	}
@@ -114,7 +114,7 @@ func (r *DNSClassCustomValidator) ValidateDelete(ctx context.Context, obj runtim
 	return nil, nil
 }
 
-func (r *DNSClassCustomValidator) validate(dnsclass *DNSClass) (admission.Warnings, error) {
+func (r *DNSClassCustomValidator) validate(dnsclass *configv1alpha1.DNSClass) (admission.Warnings, error) {
 	var allErrs field.ErrorList
 	// Check if all DNS policies in AllowedDNSPolicies are valid
 	for _, dnsPolicy := range dnsclass.Spec.AllowedDNSPolicies {
@@ -149,25 +149,4 @@ func (r *DNSClassCustomValidator) validate(dnsclass *DNSClass) (admission.Warnin
 		dnsclass.Name,
 		allErrs,
 	)
-}
-
-// Extract the keys using a regular expression
-func (r *DNSClass) ExtractTemplateKeysRegex() []string {
-	// Regular expression to match {{ .key }} patterns
-	re := regexp.MustCompile(`{{\s*\.([a-zA-Z0-9_]+)\s*}}`)
-
-	keys := []string{}
-	if r.Spec.DNSConfig != nil {
-		for _, search := range r.Spec.DNSConfig.Searches {
-			// Find all matches in the template string
-			matches := re.FindAllStringSubmatch(search, -1)
-			// Extract the keys from the matches
-			for _, match := range matches {
-				if len(match) > 1 && !slices.Contains(keys, match[1]) {
-					keys = append(keys, match[1]) // match[1] contains the key (e.g., "clusterDomain")
-				}
-			}
-		}
-	}
-	return keys
 }

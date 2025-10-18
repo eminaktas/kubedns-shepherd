@@ -2,3 +2,8 @@
 # Ignore build and test binaries.
 bin/
 dist/
+chart/
+manifests/
+config/
+.github/
+.devcontainer

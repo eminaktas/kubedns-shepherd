@@ -5,6 +5,7 @@
 # Version control directories
 .git/
 .gitignore
+.github/
 .bzr/
 .hg/
 .hgignore
@@ -20,6 +21,7 @@
 # IDE and editor-related files
 .idea/
 .vscode/
+.devcontainer/
 
 # Helm chart artifacts
-dist/chart/*.tgz
+chart/kubedns-shepherd/*.tgz

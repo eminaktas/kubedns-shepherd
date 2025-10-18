@@ -44,7 +44,7 @@ jobs:
 
       - name: Lint Helm Chart
         run: |
-          helm lint ./dist/chart
+          helm lint ./chart/kubedns-shepherd
 
       - name: Install cert-manager via Helm
         run: |
@@ -77,7 +77,7 @@ jobs:
 
       - name: Install Helm chart for project
         run: |
-          helm install my-release ./dist/chart --create-namespace --namespace kubedns-shepherd-system
+          helm install my-release ./chart/kubedns-shepherd --create-namespace --namespace kubedns-shepherd-system
 
       - name: Check Helm release status
         run: |

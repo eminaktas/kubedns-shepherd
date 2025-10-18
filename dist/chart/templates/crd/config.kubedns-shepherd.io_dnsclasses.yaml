@@ -1,29 +1,18 @@
-# START crd {{- if .Values.crds.enabled }}
+{{- if .Values.crd.enable }}
+---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: dnsclasses.config.kubedns-shepherd.io
-  annotations:
-    cert-manager.io/inject-ca-from: '{{ .Release.Namespace }}/{{ include "chart.fullname" . }}-serving-cert'
-    controller-gen.kubebuilder.io/version: v0.16.3
-    # START keep {{- if .Values.crds.keep }}
-    helm.sh/resource-policy: keep
-    # END keep {{- end }}
   labels:
-    app.kubernetes.io/component: crd
-    app.kubernetes.io/part-of: kubedns-shepherd
-  # Generated labels {{- include "chart.labels" . | nindent 4 }}
+    control-plane: controller-manager
+    {{- include "chart.labels" . | nindent 4 }}
+  annotations:
+    {{- if .Values.crd.keep }}
+    "helm.sh/resource-policy": keep
+    {{- end }}
+    controller-gen.kubebuilder.io/version: v0.18.0
+  name: dnsclasses.config.kubedns-shepherd.io
 spec:
-  conversion:
-    strategy: Webhook
-    webhook:
-      clientConfig:
-        service:
-          name: '{{ include "chart.fullname" . }}-webhook-service'
-          namespace: '{{ .Release.Namespace }}'
-          path: /convert
-      conversionReviewVersions:
-      - v1
   group: config.kubedns-shepherd.io
   names:
     kind: DNSClass
@@ -107,9 +96,12 @@ spec:
                         of a pod.
                       properties:
                         name:
-                          description: Required.
+                          description: |-
+                            Name is this DNS resolver option's name.
+                            Required.
                           type: string
                         value:
+                          description: Value is this DNS resolver option's value.
                           type: string
                       type: object
                     type: array
@@ -204,4 +196,4 @@ spec:
     storage: true
     subresources:
       status: {}
-# END crd {{- end }}
+{{- end -}}

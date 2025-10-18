@@ -1,0 +1,63 @@
+{{- if .Values.certmanager.enable }}
+# Self-signed Issuer
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  labels:
+    control-plane: controller-manager
+    {{- include "chart.labels" . | nindent 4 }}
+  name: {{ include "chart.name" . }}-selfsigned-issuer
+  namespace: {{ .Release.Namespace }}
+spec:
+  selfSigned: {}
+{{- if .Values.webhook.enable }}
+---
+# Certificate for the webhook
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  annotations:
+    {{- if .Values.crd.keep }}
+    "helm.sh/resource-policy": keep
+    {{- end }}
+  name: {{ include "chart.name" . }}-serving-cert
+  namespace: {{ .Release.Namespace }}
+  labels:
+    control-plane: controller-manager
+    {{- include "chart.labels" . | nindent 4 }}
+spec:
+  dnsNames:
+    - {{ include "chart.name" . }}.{{ .Release.Namespace }}.svc
+    - {{ include "chart.name" . }}.{{ .Release.Namespace }}.svc.{{ .Values.clusterDomain }}
+    - {{ include "chart.name" . }}-webhook-service.{{ .Release.Namespace }}.svc
+  issuerRef:
+    kind: Issuer
+    name: {{ include "chart.name" . }}-selfsigned-issuer
+  secretName: {{ include "chart.name" . }}-webhook-server-cert
+{{- end }}
+{{- if .Values.metrics.enable }}
+---
+# Certificate for the metrics
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  annotations:
+    {{- if .Values.crd.keep }}
+    "helm.sh/resource-policy": keep
+    {{- end }}
+  labels:
+    control-plane: controller-manager
+    {{- include "chart.labels" . | nindent 4 }}
+  name: {{ include "chart.name" . }}-metrics-certs
+  namespace: {{ .Release.Namespace }}
+spec:
+  dnsNames:
+    - {{ include "chart.name" . }}.{{ .Release.Namespace }}.svc
+    - {{ include "chart.name" . }}.{{ .Release.Namespace }}.svc.{{ .Values.clusterDomain }}
+    - {{ include "chart.name" . }}-metrics-service.{{ .Release.Namespace }}.svc
+  issuerRef:
+    kind: Issuer
+    name: {{ include "chart.name" . }}-selfsigned-issuer
+  secretName: {{ include "chart.name" . }}-metrics-server-cert
+{{- end }}
+{{- end }}

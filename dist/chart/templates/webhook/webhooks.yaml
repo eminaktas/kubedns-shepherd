@@ -1,0 +1,87 @@
+{{- if .Values.webhook.enable }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: {{ include "chart.name" . }}-mutating-webhook-configuration
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    {{- if .Values.certmanager.enable }}
+    cert-manager.io/inject-ca-from: "{{ $.Release.Namespace }}/{{ include "chart.name" . }}-serving-cert"
+    {{- end }}
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+webhooks:
+  - name: mpod.kubedns-shepherd.io
+    clientConfig:
+      service:
+        name: {{ include "chart.name" . }}-webhook-service
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-v1-pod
+    failurePolicy: Ignore
+    sideEffects: None
+    admissionReviewVersions:
+      - v1
+    rules:
+      - operations:
+          - CREATE
+          - UPDATE
+        apiGroups:
+          - 
+        apiVersions:
+          - v1
+        resources:
+          - pods
+  - name: mdnsclass.kubedns-shepherd.io
+    clientConfig:
+      service:
+        name: {{ include "chart.name" . }}-webhook-service
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-config-kubedns-shepherd-io-v1alpha1-dnsclass
+    failurePolicy: Fail
+    sideEffects: None
+    admissionReviewVersions:
+      - v1
+    rules:
+      - operations:
+          - CREATE
+          - UPDATE
+        apiGroups:
+          - config.kubedns-shepherd.io
+        apiVersions:
+          - v1alpha1
+        resources:
+          - dnsclasses
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "chart.name" . }}-validating-webhook-configuration
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    {{- if .Values.certmanager.enable }}
+    cert-manager.io/inject-ca-from: "{{ $.Release.Namespace }}/{{ include "chart.name" . }}-serving-cert"
+    {{- end }}
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+webhooks:
+  - name: vdnsclass.kubedns-shepherd.io
+    clientConfig:
+      service:
+        name: {{ include "chart.name" . }}-webhook-service
+        namespace: {{ .Release.Namespace }}
+        path: /validate-config-kubedns-shepherd-io-v1alpha1-dnsclass
+    failurePolicy: Fail
+    sideEffects: None
+    admissionReviewVersions:
+      - v1
+    rules:
+      - operations:
+          - CREATE
+          - UPDATE
+        apiGroups:
+          - config.kubedns-shepherd.io
+        apiVersions:
+          - v1alpha1
+        resources:
+          - dnsclasses
+{{- end }}

@@ -1,12 +1,13 @@
-{{- if .Values.dnsclass.enabled }}
+{{- if .Values.dnsclass.enable }}
 apiVersion: config.kubedns-shepherd.io/v1alpha1
 kind: DNSClass
 metadata:
-  name: {{ include "chart.fullname" . }}-dnsclass-config
+  name: {{ include "chart.name" . }}-dnsclass-config
   annotations:
     helm.sh/hook: post-install,post-upgrade
-    helm.sh/hook-weight: "4"
+    helm.sh/hook-weight: "2"
   labels:
+    control-plane: controller-manager
   {{- include "chart.labels" . | nindent 4 }}
 spec:
   allowedNamespaces:

@@ -1,0 +1,124 @@
+replicas: 3
+
+container:
+  image:
+    repository: ghcr.io/eminaktas/kubedns-shepherd
+    tag: ""
+  imagePullPolicy: IfNotPresent
+  # Specifies whether Leader Election resources should be created
+  leaderElection:
+    enable: true
+    # leaseDuration: 15s
+    # renewDeadline: 10s
+    # retryPeriod: 2s
+    # resourceLock: "leases"
+    # resourceName: "kubedns-shepherd.io"
+  extraArgs: []
+    # - "--key1=val1"
+    # - "--key2"
+  resources:
+    limits:
+      cpu: 500m
+      memory: 128Mi
+    requests:
+      cpu: 10m
+      memory: 64Mi
+  livenessProbe:
+    initialDelaySeconds: 15
+    periodSeconds: 20
+    httpGet:
+      path: /healthz
+      port: probe
+  readinessProbe:
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    httpGet:
+      path: /readyz
+      port: probe
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - "ALL"
+securityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+terminationGracePeriodSeconds: 10
+serviceAccount:
+  name: kubedns-shepherd
+  annotations: {}
+
+# To enable RBAC (Permissions) configurations
+rbac:
+  enable: true
+
+# To enable the CRDs
+crd:
+  # This option determines whether the CRDs are included
+  # in the installation process.
+  enable: true
+
+  # Enabling this option adds the "helm.sh/resource-policy": keep
+  # annotation to the CRD, ensuring it remains installed even when
+  # the Helm release is uninstalled.
+  # NOTE: Removing the CRDs will also remove all cert-manager CR(s)
+  # (Certificates, Issuers, ...) due to garbage collection.
+  keep: true
+
+# To disable metrics export set false
+metrics:
+  enable: true
+
+webhook:
+  enable: true
+
+# To enable a ServiceMonitor to export metrics to Prometheus set true
+prometheus:
+  enable: false
+  serviceMonitor:
+    labels: {}
+    annotations: {}
+    interval: "10s"
+    relabelings: ~
+    metricRelabelings: ~
+
+# To enable cert-manager injection to webhooks set true
+certmanager:
+  enable: true
+
+# To enable NetworkPolicies set true
+networkPolicy:
+  enable: false
+
+# To enable DNSClass configuration
+dnsclass:
+  enable: false
+  disabledNamespaces:
+    - kube-system
+  allowedNamespaces: []
+  allowedDNSPolicies:
+    - None
+    - ClusterFirst
+    - ClusterFirstWithHostNet
+  dnsPolicy: None
+  # dnsConfig supports templating for dynamic configuration.
+  # For more details on how to use templating with dnsConfig,
+  # please refer to the documentation:
+  # https://github.com/eminaktas/kubedns-shepherd?tab=readme-ov-file#dynamic-configuration-in-dnsclass
+  dnsConfig:
+    # nameservers:
+    #   - 10.96.0.10
+    searches:
+      - "svc.{{ .clusterDomain }}"
+      - "{{ .podNamespace }}.svc.{{ .clusterDomain }}"
+    options:
+      - name: ndots
+        value: "2"
+      - name: edns0
+
+readyCheck:
+  maxRetries: 12
+  sleepInterval: 10
+
+clusterDomain: cluster.local

@@ -5,17 +5,7 @@ permissions:
 
 on:
   push:
-    paths-ignore:
-      - '**/*.md'
-      - '.github/dependabot.yaml'
-      - 'chart/**'
-      - 'LICENSE'
   pull_request:
-    paths-ignore:
-      - '**/*.md'
-      - '.github/dependabot.yaml'
-      - 'chart/**'
-      - 'LICENSE'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

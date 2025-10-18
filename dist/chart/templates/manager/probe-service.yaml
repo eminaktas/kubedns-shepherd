@@ -1,19 +1,18 @@
+{{- if .Values.dnsclass.enable }}
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "chart.fullname" . }}-webhook-service
+  name: {{ include "chart.name" . }}-probe-service
   namespace: {{ .Release.Namespace }}
   labels:
-    app.kubernetes.io/component: webhook
-    app.kubernetes.io/part-of: kubedns-shepherd
   {{- include "chart.labels" . | nindent 4 }}
 spec:
-  type: ClusterIP
   selector:
     control-plane: controller-manager
   {{- include "chart.selectorLabels" . | nindent 4 }}
   ports:
-  - name: webhook
-    port: 443
+  - name: http
+    port: 80
     protocol: TCP
-    targetPort: webhook
+    targetPort: probe
+{{- end }}

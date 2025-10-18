@@ -1,0 +1,684 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: kubedns-shepherd
+    control-plane: controller-manager
+  name: kubedns-shepherd-system
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.18.0
+  name: dnsclasses.config.kubedns-shepherd.io
+spec:
+  group: config.kubedns-shepherd.io
+  names:
+    kind: DNSClass
+    listKind: DNSClassList
+    plural: dnsclasses
+    shortNames:
+    - dc
+    singular: dnsclass
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.state
+      name: Ready
+      type: string
+    - jsonPath: .status.discoveredFields.clusterDomain
+      name: ClusterDomain
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: DNSClass is the Schema for the dnsclasses API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: DNSClassSpec defines the desired state of DNSClass
+            properties:
+              allowedDNSPolicies:
+                items:
+                  description: DNSPolicy defines how a pod's DNS will be configured.
+                  type: string
+                type: array
+              allowedNamespaces:
+                items:
+                  type: string
+                type: array
+              disabledNamespaces:
+                items:
+                  type: string
+                type: array
+              dnsConfig:
+                description: |-
+                  PodDNSConfig defines the DNS parameters of a pod in addition to
+                  those generated from DNSPolicy.
+                properties:
+                  nameservers:
+                    description: |-
+                      A list of DNS name server IP addresses.
+                      This will be appended to the base nameservers generated from DNSPolicy.
+                      Duplicated nameservers will be removed.
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  options:
+                    description: |-
+                      A list of DNS resolver options.
+                      This will be merged with the base options generated from DNSPolicy.
+                      Duplicated entries will be removed. Resolution options given in Options
+                      will override those that appear in the base DNSPolicy.
+                    items:
+                      description: PodDNSConfigOption defines DNS resolver options
+                        of a pod.
+                      properties:
+                        name:
+                          description: |-
+                            Name is this DNS resolver option's name.
+                            Required.
+                          type: string
+                        value:
+                          description: Value is this DNS resolver option's value.
+                          type: string
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  searches:
+                    description: |-
+                      A list of DNS search domains for host-name lookup.
+                      This will be appended to the base search paths generated from DNSPolicy.
+                      Duplicated search paths will be removed.
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: atomic
+                type: object
+              dnsPolicy:
+                description: DNSPolicy defines how a pod's DNS will be configured.
+                type: string
+            type: object
+          status:
+            description: DNSClassStatus defines the observed state of DNSClass
+            properties:
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              discoveredFields:
+                properties:
+                  clusterDomain:
+                    type: string
+                  nameservers:
+                    items:
+                      type: string
+                    type: array
+                type: object
+              state:
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: kubedns-shepherd
+  name: kubedns-shepherd-controller-manager
+  namespace: kubedns-shepherd-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: kubedns-shepherd
+  name: kubedns-shepherd-leader-election-role
+  namespace: kubedns-shepherd-system
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: kubedns-shepherd
+  name: kubedns-shepherd-dnsclass-admin-role
+rules:
+- apiGroups:
+  - config.kubedns-shepherd.io
+  resources:
+  - dnsclasses
+  verbs:
+  - '*'
+- apiGroups:
+  - config.kubedns-shepherd.io
+  resources:
+  - dnsclasses/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: kubedns-shepherd
+  name: kubedns-shepherd-dnsclass-editor-role
+rules:
+- apiGroups:
+  - config.kubedns-shepherd.io
+  resources:
+  - dnsclasses
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - config.kubedns-shepherd.io
+  resources:
+  - dnsclasses/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: kubedns-shepherd
+  name: kubedns-shepherd-dnsclass-viewer-role
+rules:
+- apiGroups:
+  - config.kubedns-shepherd.io
+  resources:
+  - dnsclasses
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - config.kubedns-shepherd.io
+  resources:
+  - dnsclasses/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubedns-shepherd-manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  - nodes/proxy
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - config.kubedns-shepherd.io
+  resources:
+  - dnsclasses
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - config.kubedns-shepherd.io
+  resources:
+  - dnsclasses/status
+  verbs:
+  - get
+  - patch
+  - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubedns-shepherd-metrics-auth-role
+rules:
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubedns-shepherd-metrics-reader
+rules:
+- nonResourceURLs:
+  - /metrics
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: kubedns-shepherd
+  name: kubedns-shepherd-leader-election-rolebinding
+  namespace: kubedns-shepherd-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kubedns-shepherd-leader-election-role
+subjects:
+- kind: ServiceAccount
+  name: kubedns-shepherd-controller-manager
+  namespace: kubedns-shepherd-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: kubedns-shepherd
+  name: kubedns-shepherd-manager-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubedns-shepherd-manager-role
+subjects:
+- kind: ServiceAccount
+  name: kubedns-shepherd-controller-manager
+  namespace: kubedns-shepherd-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubedns-shepherd-metrics-auth-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubedns-shepherd-metrics-auth-role
+subjects:
+- kind: ServiceAccount
+  name: kubedns-shepherd-controller-manager
+  namespace: kubedns-shepherd-system
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: kubedns-shepherd
+    control-plane: controller-manager
+  name: kubedns-shepherd-controller-manager-metrics-service
+  namespace: kubedns-shepherd-system
+spec:
+  ports:
+  - name: https
+    port: 8443
+    protocol: TCP
+    targetPort: 8443
+  selector:
+    app.kubernetes.io/name: kubedns-shepherd
+    control-plane: controller-manager
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: kubedns-shepherd
+  name: kubedns-shepherd-webhook-service
+  namespace: kubedns-shepherd-system
+spec:
+  ports:
+  - port: 443
+    protocol: TCP
+    targetPort: 9443
+  selector:
+    app.kubernetes.io/name: kubedns-shepherd
+    control-plane: controller-manager
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: kubedns-shepherd
+    control-plane: controller-manager
+  name: kubedns-shepherd-controller-manager
+  namespace: kubedns-shepherd-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kubedns-shepherd
+      control-plane: controller-manager
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+      labels:
+        app.kubernetes.io/name: kubedns-shepherd
+        control-plane: controller-manager
+    spec:
+      containers:
+      - args:
+        - --metrics-bind-address=:8443
+        - --leader-elect
+        - --health-probe-bind-address=:8081
+        - --metrics-cert-path=/tmp/k8s-metrics-server/metrics-certs
+        - --webhook-cert-path=/tmp/k8s-webhook-server/serving-certs
+        command:
+        - /kubedns-shepherd
+        image: ghcr.io/eminaktas/kubedns-shepherd:latest
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        name: manager
+        ports:
+        - containerPort: 9443
+          name: webhook-server
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - mountPath: /tmp/k8s-metrics-server/metrics-certs
+          name: metrics-certs
+          readOnly: true
+        - mountPath: /tmp/k8s-webhook-server/serving-certs
+          name: webhook-certs
+          readOnly: true
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: kubedns-shepherd-controller-manager
+      terminationGracePeriodSeconds: 10
+      volumes:
+      - name: metrics-certs
+        secret:
+          items:
+          - key: ca.crt
+            path: ca.crt
+          - key: tls.crt
+            path: tls.crt
+          - key: tls.key
+            path: tls.key
+          optional: false
+          secretName: metrics-server-cert
+      - name: webhook-certs
+        secret:
+          secretName: webhook-server-cert
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: kubedns-shepherd
+  name: kubedns-shepherd-metrics-certs
+  namespace: kubedns-shepherd-system
+spec:
+  dnsNames:
+  - kubedns-shepherd-controller-manager-metrics-service.kubedns-shepherd-system.svc
+  - kubedns-shepherd-controller-manager-metrics-service.kubedns-shepherd-system.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: kubedns-shepherd-selfsigned-issuer
+  secretName: metrics-server-cert
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: kubedns-shepherd
+  name: kubedns-shepherd-serving-cert
+  namespace: kubedns-shepherd-system
+spec:
+  dnsNames:
+  - kubedns-shepherd-webhook-service.kubedns-shepherd-system.svc
+  - kubedns-shepherd-webhook-service.kubedns-shepherd-system.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: kubedns-shepherd-selfsigned-issuer
+  secretName: webhook-server-cert
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: kubedns-shepherd
+  name: kubedns-shepherd-selfsigned-issuer
+  namespace: kubedns-shepherd-system
+spec:
+  selfSigned: {}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  annotations:
+    cert-manager.io/inject-ca-from: kubedns-shepherd-system/kubedns-shepherd-serving-cert
+  name: kubedns-shepherd-mutating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: kubedns-shepherd-webhook-service
+      namespace: kubedns-shepherd-system
+      path: /mutate-v1-pod
+  failurePolicy: Ignore
+  name: mpod.kubedns-shepherd.io
+  rules:
+  - apiGroups:
+    - ""
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - pods
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: kubedns-shepherd-webhook-service
+      namespace: kubedns-shepherd-system
+      path: /mutate-config-kubedns-shepherd-io-v1alpha1-dnsclass
+  failurePolicy: Fail
+  name: mdnsclass.kubedns-shepherd.io
+  rules:
+  - apiGroups:
+    - config.kubedns-shepherd.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - dnsclasses
+  sideEffects: None
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  annotations:
+    cert-manager.io/inject-ca-from: kubedns-shepherd-system/kubedns-shepherd-serving-cert
+  name: kubedns-shepherd-validating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: kubedns-shepherd-webhook-service
+      namespace: kubedns-shepherd-system
+      path: /validate-config-kubedns-shepherd-io-v1alpha1-dnsclass
+  failurePolicy: Fail
+  name: vdnsclass.kubedns-shepherd.io
+  rules:
+  - apiGroups:
+    - config.kubedns-shepherd.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - dnsclasses
+  sideEffects: None

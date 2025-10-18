@@ -6,6 +6,8 @@ domain: kubedns-shepherd.io
 layout:
 - go.kubebuilder.io/v4
 plugins:
+  # TODO: Migrate helm.kubebuilder.io/v2-alpha when released.
+  # Ref: https://master.book.kubebuilder.io/plugins/available/helm-v2-alpha
   helm.kubebuilder.io/v1-alpha: {}
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}

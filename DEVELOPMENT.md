@@ -6,6 +6,8 @@ If you set up the environment, the cluster should have Cert Manager installed to
 
 ## Setting up the Environment
 
+TODO: This documention needs to be updated with latest version upgrade.
+
 1. In `config/default/kustomization.yaml`, make the following change:
 
     ```yaml

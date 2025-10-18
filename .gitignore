@@ -6,7 +6,6 @@
 *.so
 *.dylib
 bin/*
-dist/*
 Dockerfile.cross
 
 # Test binary, built with `go test -c`
@@ -29,8 +28,3 @@ go.work
 *.swp
 *.swo
 *~
-.devcontainer
-
-tmp
-chart/kubedns-shepherd/charts
-chart/kubedns-shepherd/Chart.lock

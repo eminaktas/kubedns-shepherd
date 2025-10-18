@@ -1,4 +1,9 @@
 ## Append samples of your project ##
 resources:
+- config_v1alpha1_dnsclass_all_namespaces_for_public_clouds.yaml
+- config_v1alpha1_dnsclass_all_namespaces.yaml
+- config_v1alpha1_dnsclass_with_dnspolicy.yaml
+- config_v1alpha1_dnsclass_without_nameservers.yaml
+- config_v1alpha1_dnsclass-invalid.yaml
 - config_v1alpha1_dnsclass.yaml
 #+kubebuilder:scaffold:manifestskustomizesamples

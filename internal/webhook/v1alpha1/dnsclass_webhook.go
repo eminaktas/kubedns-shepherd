@@ -1,0 +1,152 @@
+/*
+Copyright 2025.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package v1alpha1
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"slices"
+
+	configv1alpha1 "github.com/eminaktas/kubedns-shepherd/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/validation/field"
+	ctrl "sigs.k8s.io/controller-runtime"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+)
+
+// nolint:unused
+// log is for logging in this package.
+var dnsclasslog = logf.Log.WithName("dnsclass-resource")
+
+// Predefined constants for DNS policies and template keys
+var (
+	ValidDNSPolicies   = []corev1.DNSPolicy{corev1.DNSDefault, corev1.DNSClusterFirst, corev1.DNSClusterFirstWithHostNet, corev1.DNSNone}
+	DefaultDNSPolicies = []corev1.DNSPolicy{corev1.DNSClusterFirst, corev1.DNSClusterFirstWithHostNet, corev1.DNSNone}
+	ValidTemplateKeys  = []string{"podNamespace", "clusterDomain"}
+)
+
+// SetupWebhookWithManager will setup the manager to manage the webhooks
+func SetupDNSClassWebhookWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewWebhookManagedBy(mgr).For(&configv1alpha1.DNSClass{}).
+		WithDefaulter(&DNSClassCustomDefaulter{}).
+		WithValidator(&DNSClassCustomValidator{}).
+		Complete()
+}
+
+// +kubebuilder:webhook:path=/mutate-config-kubedns-shepherd-io-v1alpha1-dnsclass,mutating=true,failurePolicy=fail,sideEffects=None,groups=config.kubedns-shepherd.io,resources=dnsclasses,verbs=create;update,versions=v1alpha1,name=mdnsclass.kubedns-shepherd.io,admissionReviewVersions=v1
+
+type DNSClassCustomDefaulter struct {
+}
+
+var _ webhook.CustomDefaulter = &DNSClassCustomDefaulter{}
+
+// Default implements webhook.CustomDefaulter so a webhook will be registered for the Kind DNSClass
+func (r *DNSClassCustomDefaulter) Default(ctx context.Context, obj runtime.Object) error {
+	dnsclass, ok := obj.(*configv1alpha1.DNSClass)
+	if !ok {
+		return fmt.Errorf("expected a DNSClass object but got %T", obj)
+	}
+
+	dnsclasslog.Info("Defaulting process started", "name", dnsclass.GetName())
+
+	if dnsclass.Spec.AllowedDNSPolicies == nil {
+		dnsclass.Spec.AllowedDNSPolicies = DefaultDNSPolicies
+		dnsclasslog.Info("Applied default AllowedDNSPolicies", "name", dnsclass.GetName(), "DefaultPolicies", DefaultDNSPolicies)
+	}
+	if dnsclass.Spec.DNSPolicy == "" {
+		dnsclass.Spec.DNSPolicy = corev1.DNSNone
+		dnsclasslog.Info("Applied default DNSPolicy", "name", dnsclass.GetName(), "DefaultPolicy", corev1.DNSNone)
+	}
+
+	dnsclasslog.Info("Defaulting process completed", "name", dnsclass.GetName())
+	return nil
+}
+
+// +kubebuilder:webhook:path=/validate-config-kubedns-shepherd-io-v1alpha1-dnsclass,mutating=false,failurePolicy=fail,sideEffects=None,groups=config.kubedns-shepherd.io,resources=dnsclasses,verbs=create;update,versions=v1alpha1,name=vdnsclass.kubedns-shepherd.io,admissionReviewVersions=v1
+
+type DNSClassCustomValidator struct {
+}
+
+var _ webhook.CustomValidator = &DNSClassCustomValidator{}
+
+// ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the Kind DNSClass
+func (r *DNSClassCustomValidator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+	dnsclass, ok := obj.(*configv1alpha1.DNSClass)
+	if !ok {
+		return nil, fmt.Errorf("expected a DNSClass object but got %T", obj)
+	}
+	dnsclasslog.Info("Validation for DNSClass upon creation", "name", dnsclass.GetName())
+	return r.validate(dnsclass)
+}
+
+// ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the Kind DNSClass
+func (r *DNSClassCustomValidator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
+	dnsclass, ok := newObj.(*configv1alpha1.DNSClass)
+	if !ok {
+		return nil, fmt.Errorf("expected a DNSClass object but got %T", newObj)
+	}
+	dnsclasslog.Info("Validation for DNSClass upon update", "name", dnsclass.GetName())
+	return r.validate(dnsclass)
+}
+
+// ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the Kind DNSClass
+func (r *DNSClassCustomValidator) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+	// No validation required on delete for now
+	return nil, nil
+}
+
+func (r *DNSClassCustomValidator) validate(dnsclass *configv1alpha1.DNSClass) (admission.Warnings, error) {
+	var allErrs field.ErrorList
+	// Check if all DNS policies in AllowedDNSPolicies are valid
+	for _, dnsPolicy := range dnsclass.Spec.AllowedDNSPolicies {
+		if !slices.Contains(ValidDNSPolicies, dnsPolicy) {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("dnsPolicy"), dnsclass.Name, fmt.Sprintf("invalid DNS policy: %s. Allowed policies: %v", dnsPolicy, ValidDNSPolicies)))
+		}
+	}
+
+	// Ensure the DNSPolicy itself is valid
+	if !slices.Contains(ValidDNSPolicies, dnsclass.Spec.DNSPolicy) {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("dnsPolicy"), dnsclass.Name, fmt.Sprintf("invalid DNSPolicy: %s. Allowed policies: %v", dnsclass.Spec.DNSPolicy, ValidDNSPolicies)))
+	}
+
+	// Ensure that DNSConfig is only set if DNSPolicy is None
+	if dnsclass.Spec.DNSPolicy != corev1.DNSNone && dnsclass.Spec.DNSConfig != nil {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("dnsPolicy"), dnsclass.Name, fmt.Sprintf("DNSConfig cannot be set when DNSPolicy is %s", dnsclass.Spec.DNSPolicy)))
+	}
+
+	// Validate template keys in DNSConfig.Searches
+	for _, key := range dnsclass.ExtractTemplateKeysRegex() {
+		if !slices.Contains(ValidTemplateKeys, key) {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "dnsConfig").Child("searches"), dnsclass.Name, fmt.Sprintf("invalid template key: %s in searches. Allowed keys: %v", key, ValidTemplateKeys)))
+		}
+	}
+	if len(allErrs) == 0 {
+		return nil, nil
+	}
+	dnsclasslog.Error(errors.New(allErrs.ToAggregate().Error()), "validation failed")
+
+	return nil, apierrors.NewInvalid(
+		dnsclass.GroupVersionKind().GroupKind(),
+		dnsclass.Name,
+		allErrs,
+	)
+}

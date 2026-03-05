@@ -131,34 +131,14 @@ var _ = Describe("DNSClass Webhook", Ordered, func() {
 			}
 			createAndValidateDNSClass()
 		})
-	})
 
-	Context("When calling functions directly", func() {
-		It("should return error when calling Default function with different object", func() {
-			dnsCustomDefault := &DNSClassCustomDefaulter{}
-			err := dnsCustomDefault.Default(context.TODO(), &corev1.Pod{})
-			Expect(err).Should(HaveOccurred())
-		})
-
-		It("should return error when calling ValidateCreate with different object", func() {
-			dnsCustomValidator := &DNSClassCustomValidator{}
-			warn, err := dnsCustomValidator.ValidateCreate(context.TODO(), &corev1.Pod{})
-			Expect(warn).Should(BeNil())
-			Expect(err).Should(HaveOccurred())
-		})
-
-		It("should return error when calling ValidateUpdate with different object", func() {
-			dnsCustomValidator := &DNSClassCustomValidator{}
-			warn, err := dnsCustomValidator.ValidateUpdate(context.TODO(), nil, &corev1.Pod{})
-			Expect(warn).Should(BeNil())
-			Expect(err).Should(HaveOccurred())
-		})
-
-		It("should return error when calling ValidateDelete with different object", func() {
-			dnsCustomValidator := &DNSClassCustomValidator{}
-			warn, err := dnsCustomValidator.ValidateDelete(context.TODO(), &corev1.Pod{})
-			Expect(warn).Should(BeNil())
-			Expect(err).ShouldNot(HaveOccurred())
+		Context("When calling validating functions directly", func() {
+			It("should return error when calling ValidateDelete with different object", func() {
+				dnsCustomValidator := &DNSClassCustomValidator{}
+				warn, err := dnsCustomValidator.ValidateDelete(context.TODO(), &configv1alpha1.DNSClass{})
+				Expect(warn).Should(BeNil())
+				Expect(err).ShouldNot(HaveOccurred())
+			})
 		})
 	})
 })

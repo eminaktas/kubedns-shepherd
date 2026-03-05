@@ -25,11 +25,9 @@ import (
 	configv1alpha1 "github.com/eminaktas/kubedns-shepherd/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
@@ -46,7 +44,7 @@ var (
 
 // SetupWebhookWithManager will setup the manager to manage the webhooks
 func SetupDNSClassWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr).For(&configv1alpha1.DNSClass{}).
+	return ctrl.NewWebhookManagedBy(mgr, &configv1alpha1.DNSClass{}).
 		WithDefaulter(&DNSClassCustomDefaulter{}).
 		WithValidator(&DNSClassCustomValidator{}).
 		Complete()
@@ -57,15 +55,8 @@ func SetupDNSClassWebhookWithManager(mgr ctrl.Manager) error {
 type DNSClassCustomDefaulter struct {
 }
 
-var _ webhook.CustomDefaulter = &DNSClassCustomDefaulter{}
-
 // Default implements webhook.CustomDefaulter so a webhook will be registered for the Kind DNSClass
-func (r *DNSClassCustomDefaulter) Default(ctx context.Context, obj runtime.Object) error {
-	dnsclass, ok := obj.(*configv1alpha1.DNSClass)
-	if !ok {
-		return fmt.Errorf("expected a DNSClass object but got %T", obj)
-	}
-
+func (r *DNSClassCustomDefaulter) Default(ctx context.Context, dnsclass *configv1alpha1.DNSClass) error {
 	dnsclasslog.Info("Defaulting process started", "name", dnsclass.GetName())
 
 	if dnsclass.Spec.AllowedDNSPolicies == nil {
@@ -86,30 +77,20 @@ func (r *DNSClassCustomDefaulter) Default(ctx context.Context, obj runtime.Objec
 type DNSClassCustomValidator struct {
 }
 
-var _ webhook.CustomValidator = &DNSClassCustomValidator{}
-
 // ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the Kind DNSClass
-func (r *DNSClassCustomValidator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
-	dnsclass, ok := obj.(*configv1alpha1.DNSClass)
-	if !ok {
-		return nil, fmt.Errorf("expected a DNSClass object but got %T", obj)
-	}
-	dnsclasslog.Info("Validation for DNSClass upon creation", "name", dnsclass.GetName())
-	return r.validate(dnsclass)
+func (r *DNSClassCustomValidator) ValidateCreate(ctx context.Context, obj *configv1alpha1.DNSClass) (admission.Warnings, error) {
+	dnsclasslog.Info("Validation for DNSClass upon creation", "name", obj.GetName())
+	return r.validate(obj)
 }
 
 // ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the Kind DNSClass
-func (r *DNSClassCustomValidator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
-	dnsclass, ok := newObj.(*configv1alpha1.DNSClass)
-	if !ok {
-		return nil, fmt.Errorf("expected a DNSClass object but got %T", newObj)
-	}
-	dnsclasslog.Info("Validation for DNSClass upon update", "name", dnsclass.GetName())
-	return r.validate(dnsclass)
+func (r *DNSClassCustomValidator) ValidateUpdate(ctx context.Context, oldObj, newObj *configv1alpha1.DNSClass) (admission.Warnings, error) {
+	dnsclasslog.Info("Validation for DNSClass upon update", "name", newObj.GetName())
+	return r.validate(newObj)
 }
 
 // ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the Kind DNSClass
-func (r *DNSClassCustomValidator) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+func (r *DNSClassCustomValidator) ValidateDelete(ctx context.Context, obj *configv1alpha1.DNSClass) (admission.Warnings, error) {
 	// No validation required on delete for now
 	return nil, nil
 }

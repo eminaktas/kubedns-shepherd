@@ -1,7 +1,7 @@
 # KubeDNS Shepherd
 
 [![Release](https://github.com/eminaktas/kubedns-shepherd/actions/workflows/release.yaml/badge.svg)](https://github.com/eminaktas/kubedns-shepherd/actions/workflows/release.yaml)
-[![Unit test](https://github.com/eminaktas/kubedns-shepherd/actions/workflows/unit-tests.yaml/badge.svg?branch=main)](https://github.com/eminaktas/kubedns-shepherd/actions/workflows/unit-tests.yaml)
+[![Tests](https://github.com/eminaktas/kubedns-shepherd/actions/workflows/test.yaml/badge.svg?branch=main)](https://github.com/eminaktas/kubedns-shepherd/actions/workflows/test.yaml)
 [![Lint](https://github.com/eminaktas/kubedns-shepherd/actions/workflows/lint.yaml/badge.svg?branch=main)](https://github.com/eminaktas/kubedns-shepherd/actions/workflows/lint.yaml)
 [![Go Report Card](https://goreportcard.com/badge/eminaktas/kubedns-shepherd)](https://goreportcard.com/report/eminaktas/kubedns-shepherd)
 [![Coverage Status](https://coveralls.io/repos/github/eminaktas/kubedns-shepherd/badge.svg?branch=main)](https://coveralls.io/github/eminaktas/kubedns-shepherd?branch=main)

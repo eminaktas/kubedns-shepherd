@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"context"
 	"fmt"
 
 	configv1alpha1 "github.com/eminaktas/kubedns-shepherd/api/v1alpha1"
@@ -129,6 +130,15 @@ var _ = Describe("DNSClass Webhook", Ordered, func() {
 				},
 			}
 			createAndValidateDNSClass()
+		})
+
+		Context("When calling validating functions directly", func() {
+			It("should return error when calling ValidateDelete with different object", func() {
+				dnsCustomValidator := &DNSClassCustomValidator{}
+				warn, err := dnsCustomValidator.ValidateDelete(context.TODO(), &configv1alpha1.DNSClass{})
+				Expect(warn).Should(BeNil())
+				Expect(err).Should(BeNil())
+			})
 		})
 	})
 })

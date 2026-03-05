@@ -276,7 +276,7 @@ func main() {
 	if err = (&controller.DNSClassReconciler{
 		Client:        mgr.GetClient(),
 		Config:        mgr.GetConfig(),
-		EventRecorder: mgr.GetEventRecorderFor("dnsclass-controller"),
+		EventRecorder: mgr.GetEventRecorder("dnsclass-controller"),
 		MaxConcurrentReconcilesForDNSClassReconciler: maxConcurrentReconcilesForDNSClassReconciler,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DNSClass")

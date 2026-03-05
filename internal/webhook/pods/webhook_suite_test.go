@@ -124,7 +124,7 @@ var _ = BeforeSuite(func() {
 	err = (&controller.DNSClassReconciler{
 		Client:        mgr.GetClient(),
 		Config:        utils.GetDummyConfig(mockServer.URL, mgr),
-		EventRecorder: mgr.GetEventRecorderFor("dnsclass-controller"),
+		EventRecorder: mgr.GetEventRecorder("dnsclass-controller"),
 	}).SetupWithManager(mgr)
 	Expect(err).ToNot(HaveOccurred())
 

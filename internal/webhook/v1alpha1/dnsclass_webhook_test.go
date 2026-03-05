@@ -137,7 +137,7 @@ var _ = Describe("DNSClass Webhook", Ordered, func() {
 				dnsCustomValidator := &DNSClassCustomValidator{}
 				warn, err := dnsCustomValidator.ValidateDelete(context.TODO(), &configv1alpha1.DNSClass{})
 				Expect(warn).Should(BeNil())
-				Expect(err).Should(BeNil())
+				Expect(err).ShouldNot(HaveOccurred())
 			})
 		})
 	})

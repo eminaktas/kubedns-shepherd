@@ -34,6 +34,11 @@ import (
 	utilptr "k8s.io/utils/ptr"
 )
 
+var (
+	KubeletConfigStr = "kubeletconfig"
+	ClusterDNSStr    = "clusterDNS"
+)
+
 var _ = Describe("DNSClass Controller", Ordered, func() {
 	const (
 		// Polling timeout for eventually blocks
@@ -139,7 +144,7 @@ var _ = Describe("DNSClass Controller", Ordered, func() {
 		It("should not populate discovered field but DNSClass should be available", func() {
 			By("Tampering the configz response")
 			utils.MockResponse = map[string]interface{}{
-				"kubeletconfig": map[string]interface{}{},
+				KubeletConfigStr: map[string]interface{}{},
 			}
 
 			By("Creating a DNSClass with only podNamespace templating key")
@@ -173,8 +178,8 @@ var _ = Describe("DNSClass Controller", Ordered, func() {
 		It("should fail to reconcile DNSClass due to missing discovered fields", func() {
 			By("Tampering the configz response")
 			utils.MockResponse = map[string]interface{}{
-				"kubeletconfig": map[string]interface{}{
-					"clusterDNS": []string{utils.ClusterDNS},
+				KubeletConfigStr: map[string]interface{}{
+					ClusterDNSStr: []string{utils.ClusterDNS},
 				},
 			}
 
@@ -206,7 +211,7 @@ var _ = Describe("DNSClass Controller", Ordered, func() {
 		It("should fail to test string and slice fields", func() {
 			By("Tampering the configz response")
 			utils.MockResponse = map[string]interface{}{
-				"kubeletconfig": map[string]interface{}{
+				KubeletConfigStr: map[string]interface{}{
 					"clusterDNS":    "random-string",
 					"clusterDomain": []string{"random-string"},
 				},
@@ -238,7 +243,7 @@ var _ = Describe("DNSClass Controller", Ordered, func() {
 		It("should fail to test string for slice field", func() {
 			By("Tampering the configz response")
 			utils.MockResponse = map[string]interface{}{
-				"kubeletconfig": map[string]interface{}{
+				KubeletConfigStr: map[string]interface{}{
 					"clusterDNS": []bool{true},
 				},
 			}
@@ -269,7 +274,7 @@ var _ = Describe("DNSClass Controller", Ordered, func() {
 		It("should fail to test field due to unsupported target type", func() {
 			By("Tampering the configz response")
 			utils.MockResponse = map[string]interface{}{
-				"kubeletconfig": map[string]interface{}{
+				KubeletConfigStr: map[string]interface{}{
 					"dummy": []bool{true},
 				},
 			}

@@ -37,6 +37,18 @@ import (
 	utilptr "k8s.io/utils/ptr"
 )
 
+var (
+	TestContainerStr      = "test-container"
+	TestPodStr            = "test-pod-dummy"
+	TestNamespaceStr      = "test-ns-dummy"
+	TestContainerImageStr = "busybox:stable"
+	NDotsStr              = "ndots"
+	Edns0Str              = "edns0"
+	SearchesStr0          = "{{ .clusterDomain }}"
+	SearchesStr1          = "svc.{{ .clusterDomain }}"
+	SearchesStr2          = "{{ .podNamespace }}.svc.{{ .clusterDomain }}"
+)
+
 var _ = Describe("Pods Webhook Controller", Ordered, func() {
 	const (
 		pollingTimeout  = 10 * time.Second
@@ -79,8 +91,8 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{
 					{
-						Name:  "test-container",
-						Image: "busybox:stable",
+						Name:  TestContainerStr,
+						Image: TestContainerImageStr,
 					},
 				},
 				DNSPolicy: podDNSPolicy,
@@ -168,8 +180,8 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 				Nameservers: []string{utils.ClusterDNS},
 				Searches:    []string{fmt.Sprintf("svc.%s", utils.ClusterDomain), utils.ClusterDomain},
 				Options: []corev1.PodDNSConfigOption{
-					{Name: "ndots", Value: utilptr.To("3")},
-					{Name: "edns0"},
+					{Name: NDotsStr, Value: utilptr.To("3")},
+					{Name: Edns0Str},
 				},
 			}
 			createAndValidateDNSClass(dnsconfig, corev1.DNSNone, nil, nil, nil, configv1alpha1.StateReady)
@@ -183,10 +195,10 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 
 		It("should apply DNSClass with discovered fields to pod", func() {
 			dnsconfig := &corev1.PodDNSConfig{
-				Searches: []string{"{{ .podNamespace }}.svc.{{ .clusterDomain }}", "svc.{{ .clusterDomain }}", "{{ .clusterDomain }}"},
+				Searches: []string{SearchesStr2, SearchesStr1, SearchesStr0},
 				Options: []corev1.PodDNSConfigOption{
-					{Name: "ndots", Value: utilptr.To("3")},
-					{Name: "edns0"},
+					{Name: NDotsStr, Value: utilptr.To("3")},
+					{Name: Edns0Str},
 				},
 			}
 			createAndValidateDNSClass(dnsconfig, corev1.DNSNone, []string{ns.Name}, nil, nil, configv1alpha1.StateReady)
@@ -203,8 +215,8 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 					utils.ClusterDomain,
 				},
 				Options: []corev1.PodDNSConfigOption{
-					{Name: "ndots", Value: utilptr.To("3")},
-					{Name: "edns0"},
+					{Name: NDotsStr, Value: utilptr.To("3")},
+					{Name: Edns0Str},
 				},
 			}
 			Expect(pod.Spec.DNSConfig).Should(Equal(expectedDNSConfig))
@@ -212,10 +224,10 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 
 		It("should apply DNSClass to pods with owner referance", func() {
 			dnsconfig := &corev1.PodDNSConfig{
-				Searches: []string{"{{ .podNamespace }}.svc.{{ .clusterDomain }}", "svc.{{ .clusterDomain }}", "{{ .clusterDomain }}"},
+				Searches: []string{SearchesStr2, SearchesStr1, SearchesStr0},
 				Options: []corev1.PodDNSConfigOption{
-					{Name: "ndots", Value: utilptr.To("3")},
-					{Name: "edns0"},
+					{Name: NDotsStr, Value: utilptr.To("3")},
+					{Name: Edns0Str},
 				},
 			}
 			createAndValidateDNSClass(dnsconfig, corev1.DNSNone, []string{ns.Name}, nil, nil, configv1alpha1.StateReady)
@@ -232,8 +244,8 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 					utils.ClusterDomain,
 				},
 				Options: []corev1.PodDNSConfigOption{
-					{Name: "ndots", Value: utilptr.To("3")},
-					{Name: "edns0"},
+					{Name: NDotsStr, Value: utilptr.To("3")},
+					{Name: Edns0Str},
 				},
 			}
 			Expect(pod.Spec.DNSConfig).Should(Equal(expectedDNSConfig))
@@ -248,9 +260,9 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 			}
 			dnsconfig := &corev1.PodDNSConfig{
 				Searches: []string{
-					"svc.{{ .clusterDomain }}",
-					"{{ .podNamespace }}.svc.{{ .clusterDomain }}",
-					"{{ .clusterDomain }}"},
+					SearchesStr1,
+					SearchesStr2,
+					SearchesStr0},
 			}
 
 			createAndValidateDNSClass(dnsconfig, corev1.DNSNone, []string{ns.Name}, nil, nil, configv1alpha1.StateError)
@@ -328,8 +340,8 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 						Version: "v1",
 						Group:   "",
 					},
-					Name:      "test-pod-dummy",
-					Namespace: "test-ns-dummy",
+					Name:      TestPodStr,
+					Namespace: TestNamespaceStr,
 					Object: runtime.RawExtension{
 						Raw: nil,
 					},
@@ -359,7 +371,7 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 		It("should fail at template execute due to missing key", func() {
 			dnsconfig := &corev1.PodDNSConfig{
 				Searches: []string{
-					"svc.{{ .clusterDomain }}",
+					SearchesStr1,
 					"{{ .podNamespace }}.svc.{{ .dnsDomain }}",
 					"{{ .clusterName }}"},
 			}
@@ -375,14 +387,14 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 			}
 			localPod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod-dummy",
-					Namespace: "test-ns-dummy",
+					Name:      TestPodStr,
+					Namespace: TestNamespaceStr,
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
-							Name:  "test-container",
-							Image: "busybox:stable",
+							Name:  TestContainerStr,
+							Image: TestContainerImageStr,
 						},
 					},
 					DNSPolicy: corev1.DNSClusterFirst,
@@ -408,14 +420,14 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 			}
 			localPod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod-dummy",
-					Namespace: "test-ns-dummy",
+					Name:      TestPodStr,
+					Namespace: TestNamespaceStr,
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
-							Name:  "test-container",
-							Image: "busybox:stable",
+							Name:  TestContainerStr,
+							Image: TestContainerImageStr,
 						},
 					},
 					DNSPolicy: corev1.DNSClusterFirst,

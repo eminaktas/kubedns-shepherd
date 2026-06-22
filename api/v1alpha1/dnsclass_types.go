@@ -22,6 +22,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 const (
@@ -78,7 +79,10 @@ type DNSClassList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&DNSClass{}, &DNSClassList{})
+	SchemeBuilder.Register(func(s *runtime.Scheme) error {
+		s.AddKnownTypes(SchemeGroupVersion, &DNSClass{}, &DNSClassList{})
+		return nil
+	})
 }
 
 // Extract the keys using a regular expression

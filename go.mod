@@ -3,7 +3,7 @@ module github.com/eminaktas/kubedns-shepherd
 go 1.26.4
 
 require (
-	github.com/caarlos0/go-version v0.2.2
+	github.com/eminaktas/go-version v0.1.0
 	github.com/onsi/ginkgo/v2 v2.31.0
 	github.com/onsi/gomega v1.42.0
 	github.com/pkg/errors v0.9.1

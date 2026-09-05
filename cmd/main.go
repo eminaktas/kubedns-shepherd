@@ -24,12 +24,11 @@ import (
 	"path/filepath"
 	"time"
 
-	_ "embed"
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
-	goversion "github.com/caarlos0/go-version"
+	buildversion "github.com/eminaktas/go-version"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -52,12 +51,6 @@ import (
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
-
-	version   = ""
-	commit    = ""
-	treeState = ""
-	date      = ""
-	builtBy   = ""
 )
 
 func init() {
@@ -165,9 +158,8 @@ func main() {
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	if printVersion {
-		buildVersion := buildVersion()
-		fmt.Println(buildVersion.String())
-		os.Exit(0)
+		fmt.Println(buildversion.Current())
+		return
 	}
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
@@ -328,36 +320,4 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
-}
-
-const website = "https://github.com/eminaktas/kubedns-shepherd"
-
-//go:embed "art.txt"
-var asciiArt string
-
-func buildVersion() goversion.Info {
-	return goversion.GetVersionInfo(
-		goversion.WithAppDetails(
-			"kubedns-shepherd",
-			"A Kubernetes controller that manages the DNS configuration for workloads",
-			website),
-		goversion.WithASCIIName(asciiArt),
-		func(i *goversion.Info) {
-			if commit != "" {
-				i.GitCommit = commit
-			}
-			if treeState != "" {
-				i.GitTreeState = treeState
-			}
-			if date != "" {
-				i.BuildDate = date
-			}
-			if version != "" {
-				i.GitVersion = version
-			}
-			if builtBy != "" {
-				i.BuiltBy = builtBy
-			}
-		},
-	)
 }

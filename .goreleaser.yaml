@@ -15,7 +15,12 @@ builds:
     flags:
       - -trimpath
     ldflags:
-      - -s -w -X main.version={{ .Version }} -X main.commit={{ .Commit }} -X main.date={{ .CommitDate }} -X main.treeState={{ .IsGitDirty }} -X main.builtBy=goreleaser
+      - >-
+        -s -w
+        -X github.com/eminaktas/go-version.buildVersion={{ .Version }}
+        -X github.com/eminaktas/go-version.buildRevision={{ .Commit }}
+        -X github.com/eminaktas/go-version.commitTime={{ .CommitDate }}
+        -X github.com/eminaktas/go-version.buildModified={{ .IsGitDirty }}
     goos:
       - linux
     goarch:
@@ -44,15 +49,15 @@ kos:
       - linux/s390x
       - linux/ppc64le
     labels:
-      io.artifacthub.package.readme-url: "https://raw.githubusercontent.com/eminaktas/kubedns-shepherd/main/README.md"
-      io.artifacthub.package.maintainers: '[{"name":"Emin Aktas","email":"eminaktas34@gmail.com"}]'
-      io.artifacthub.package.license: "Apache-2.0"
+      org.opencontainers.image.title: "{{ .ProjectName }}"
       org.opencontainers.image.description: "A Kubernetes controller that manages the DNS configuration for workloads"
+      org.opencontainers.image.licenses: "Apache-2.0"
+      org.opencontainers.image.url: https://github.com/eminaktas/kubedns-shepherd
       org.opencontainers.image.created: "{{ .Date }}"
-      org.opencontainers.image.name: "{{ .ProjectName }}"
       org.opencontainers.image.revision: "{{ .FullCommit }}"
       org.opencontainers.image.version: "{{ .Version }}"
       org.opencontainers.image.source: "{{ .GitURL }}"
+      io.artifacthub.package.readme-url: "https://raw.githubusercontent.com/eminaktas/kubedns-shepherd/main/README.md"
 
 archives:
   - name_template: >-
@@ -87,7 +92,6 @@ changelog:
   filters:
     exclude:
       - "^test:"
-      - "^test\\("
       - "^chore"
       - "merge conflict"
       - Merge pull request
@@ -96,22 +100,16 @@ changelog:
       - go mod tidy
   groups:
     - title: Dependency updates
-      regexp: '^.*?(feat|fix|chore)\(deps\)!?:.+$'
+      regexp: "^.*feat\\(deps\\)*:+.*$"
       order: 300
     - title: "New Features"
-      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      regexp: "^.*feat[(\\w)]*:+.*$"
       order: 100
-    - title: "Security updates"
-      regexp: '^.*?sec(\(.+\))??!?:.+$'
-      order: 150
     - title: "Bug fixes"
-      regexp: '^.*?(fix|refactor)(\(.+\))??!?:.+$'
+      regexp: "^.*fix[(\\w)]*:+.*$"
       order: 200
     - title: "Documentation updates"
-      regexp: ^.*?docs?(\(.+\))??!?:.+$
-      order: 400
-    - title: "Build process updates"
-      regexp: ^.*?(build|ci)(\(.+\))??!?:.+$
+      regexp: "^.*docs[(\\w)]*:+.*$"
       order: 400
     - title: Other work
       order: 9999

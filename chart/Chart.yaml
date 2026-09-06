@@ -5,8 +5,8 @@ description: |
   ensuring efficient and reliable way to configure DNS within your Kubernetes cluster.
 type: application
 
-version: 0.4.4-rc.0
-appVersion: "0.4.4-rc.0"
+version: 0.4.4-rc.1
+appVersion: "0.4.4-rc.1"
 
 keywords:
   - kubernetes

@@ -2,15 +2,17 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "chart.name" . }}-api-check
-  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "kubedns-shepherd.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
   annotations:
     helm.sh/hook: post-install,post-upgrade
     helm.sh/hook-weight: "1"
-    helm.sh/hook-delete-policy: hook-succeeded
-  labels:
-    control-plane: controller-manager
-  {{- include "chart.labels" . | nindent 4 }}
+    helm.sh/hook-delete-policy: hook-succeeded,before-hook-creation
+  name: {{ include "kubedns-shepherd.resourceName" (dict "suffix" "api-check" "context" $) }}
+  namespace: {{ .Release.Namespace }}
 spec:
   template:
     spec:
@@ -27,7 +29,7 @@ spec:
 
               # Check API readiness with a limit on retries
               retries=0
-              until [ "$retries" -ge "$MAX_RETRIES" ] || curl -sf http://{{ include "chart.name" . }}-probe-service.{{ .Release.Namespace }}/readyz; do
+              until [ "$retries" -ge "$MAX_RETRIES" ] || curl -sf http://{{ include "kubedns-shepherd.resourceName" (dict "suffix" "probe-service" "context" $) }}.{{ .Release.Namespace }}/readyz; do
                 echo "Waiting for API to be ready... Attempt $((retries+1))/$MAX_RETRIES"
                 retries=$((retries+1))
                 sleep $SLEEP_INTERVAL

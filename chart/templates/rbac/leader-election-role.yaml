@@ -1,12 +1,13 @@
-{{- if .Values.rbac.enable }}
-# permissions to do leader election.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   labels:
-    {{- include "chart.labels" . | nindent 4 }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "kubedns-shepherd.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  name: {{ include "kubedns-shepherd.resourceName" (dict "suffix" "leader-election-role" "context" $) }}
   namespace: {{ .Release.Namespace }}
-  name: {{ include "chart.name" . }}-leader-election-role
 rules:
 - apiGroups:
   - ""
@@ -39,4 +40,3 @@ rules:
   verbs:
   - create
   - patch
-{{- end -}}

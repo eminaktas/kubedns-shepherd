@@ -24,4 +24,4 @@
 .devcontainer/
 
 # Helm chart artifacts
-chart/kubedns-shepherd/*.tgz
+chart/*.tgz

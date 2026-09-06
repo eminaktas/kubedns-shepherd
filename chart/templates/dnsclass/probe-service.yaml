@@ -1,0 +1,21 @@
+{{- if .Values.dnsclass.enable }}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "kubedns-shepherd.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  name: {{ include "kubedns-shepherd.resourceName" (dict "suffix" "probe-service" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 8081
+  selector:
+    app.kubernetes.io/name: {{ include "kubedns-shepherd.name" . }}
+    control-plane: controller-manager
+{{- end }}

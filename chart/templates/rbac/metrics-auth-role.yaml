@@ -1,10 +1,8 @@
-{{- if and .Values.rbac.enable .Values.metrics.enable }}
+{{- if and .Values.metrics.enabled .Values.metrics.secure }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  labels:
-    {{- include "chart.labels" . | nindent 4 }}
-  name: {{ include "chart.name" . }}-metrics-auth-role
+  name: {{ include "kubedns-shepherd.resourceName" (dict "suffix" "metrics-auth-role" "context" $) }}
 rules:
 - apiGroups:
   - authentication.k8s.io
@@ -18,4 +16,4 @@ rules:
   - subjectaccessreviews
   verbs:
   - create
-{{- end -}}
+{{- end }}

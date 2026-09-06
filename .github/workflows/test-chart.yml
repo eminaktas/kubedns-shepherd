@@ -42,7 +42,7 @@ jobs:
 
       - name: Lint Helm Chart
         run: |
-          helm lint ./chart/kubedns-shepherd
+          helm lint ./chart
 
       - name: Install cert-manager via Helm (wait for readiness)
         run: |

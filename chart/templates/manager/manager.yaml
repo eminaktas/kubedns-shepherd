@@ -1,103 +1,177 @@
+{{- if or (not (hasKey .Values.manager "enabled")) (.Values.manager.enabled) }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "chart.name" . }}-controller-manager
-  namespace: {{ .Release.Namespace }}
   labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "kubedns-shepherd.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
     control-plane: controller-manager
-    {{- include "chart.labels" . | nindent 4 }}
-spec:
-  {{- if gt (.Values.replicas | int) 1 }}
-  {{- if not .Values.container.leaderElection.enable }}
-  {{- fail "You must set leaderElection to use more than 1 replica"}}
-  {{- end}}
-  replicas: {{ required "leaderElection required for running more than one replica" .Values.replicas }}
-  {{- else }}
-  replicas: 1
+    {{- with .Values.manager.labels }}
+    {{- with omit . "app.kubernetes.io/managed-by" "app.kubernetes.io/name" "helm.sh/chart" "app.kubernetes.io/instance" "control-plane" }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- end }}
+  name: {{ include "kubedns-shepherd.resourceName" (dict "suffix" "controller-manager" "context" $) }}
+  namespace: {{ .Release.Namespace }}
+  {{- if .Values.manager.annotations }}
+  annotations:
+    {{- toYaml .Values.manager.annotations | nindent 4 }}
   {{- end }}
+spec:
+  {{- with .Values.manager.strategy }}
+  strategy: {{ toYaml . | nindent 6 }}
+  {{- end }}
+  replicas: {{ .Values.manager.replicas }}
   selector:
     matchLabels:
+      app.kubernetes.io/name: {{ include "kubedns-shepherd.name" . }}
       control-plane: controller-manager
-      {{- include "chart.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       annotations:
         kubectl.kubernetes.io/default-container: manager
-      labels:
-        control-plane: controller-manager
-        {{- include "chart.labels" . | nindent 8 }}
-    spec:
-      containers:
-      - args:
-        - --health-probe-bind-address=:8081
-        {{- if .Values.metrics.enable }}
-        - --metrics-bind-address=:8443
-        {{- end }}
-        {{- include "kubedns-shepherd.leaderElection" . | nindent 8 }}
-        {{- with .Values.container.extraArgs }}
+        {{- with .Values.manager.pod }}
+        {{- with .annotations }}
+        {{- with omit . "kubectl.kubernetes.io/default-container" }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-        image: {{ .Values.container.image.repository }}:{{ .Values.container.image.tag | default .Chart.AppVersion }}
-        {{- if .Values.container.imagePullPolicy }}
-        imagePullPolicy: {{ .Values.container.imagePullPolicy }}
         {{- end }}
-        name: manager
-        {{- if .Values.container.env }}
-        env:
-          {{- range $key, $value := .Values.container.env }}
-          - name: {{ $key }}
-            value: {{ $value }}
-          {{- end }}
+        {{- end }}
+      labels:
+        app.kubernetes.io/name: {{ include "kubedns-shepherd.name" . }}
+        helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
+        control-plane: controller-manager
+        {{- with .Values.manager.pod }}
+        {{- with .labels }}
+        {{- with omit . "app.kubernetes.io/name" "helm.sh/chart" "app.kubernetes.io/instance" "app.kubernetes.io/managed-by" "control-plane" }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+        {{- end }}
+    spec:
+      {{- with .Values.manager.topologySpreadConstraints }}
+      topologySpreadConstraints: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.manager.priorityClassName }}
+      priorityClassName: {{ . | quote }}
+      {{- end }}
+      {{- with .Values.manager.tolerations }}
+      tolerations: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.manager.affinity }}
+      affinity: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.manager.nodeSelector }}
+      nodeSelector: {{ toYaml . | nindent 10 }}
+      {{- end }}
+      {{- with .Values.manager.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+      - args:
+        {{- if .Values.metrics.enabled }}
+        - --metrics-bind-address=:{{ .Values.metrics.port }}
+        {{- if not .Values.metrics.secure }}
+        - --metrics-secure=false
+        {{- end }}
+        {{- else }}
+        # Bind to :0 to disable the controller-runtime managed metrics server
+        - --metrics-bind-address=0
+        {{- end }}
+        - --health-probe-bind-address=:8081
+        {{- range .Values.manager.args }}
+        - {{ . }}
+        {{- end }}
+        {{- if and .Values.certManager.enabled .Values.metrics.enabled .Values.metrics.secure }}
+        - --metrics-cert-path=/tmp/k8s-metrics-server/metrics-certs
+        {{- end }}
+        {{- if .Values.certManager.enabled }}
+        - --webhook-cert-path=/tmp/k8s-webhook-server/serving-certs
+        {{- end }}
+        command:
+        - /kubedns-shepherd
+        image: "{{ .Values.manager.image.repository }}{{- if not (contains "@" .Values.manager.image.repository) }}:{{ .Values.manager.image.tag | default .Chart.AppVersion }}{{- end }}"
+        {{- with .Values.manager.image.pullPolicy }}
+        imagePullPolicy: {{ . }}
         {{- end }}
         livenessProbe:
-          {{- toYaml .Values.container.livenessProbe | nindent 10 }}
-        readinessProbe:
-          {{- toYaml .Values.container.readinessProbe | nindent 10 }}
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        name: manager
         ports:
-          - containerPort: 8081
-            name: probe
-            protocol: TCP
-        {{- if .Values.webhook.enable }}
-          - containerPort: 9443
-            name: webhook
-            protocol: TCP
-        {{- end }}
-        {{- if .Values.prometheus.enable }}
-          - containerPort: 8443
-            name: metrics
-            protocol: TCP
-        {{- end }}
+        - containerPort: {{ .Values.webhook.port }}
+          name: webhook-server
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
         resources:
-          {{- toYaml .Values.container.resources | nindent 10 }}
+          {{- if .Values.manager.resources }}
+          {{- toYaml .Values.manager.resources | nindent 10 }}
+          {{- else }}
+          {}
+          {{- end }}
         securityContext:
-          {{- toYaml .Values.container.securityContext | nindent 10 }}
-        {{- if and .Values.certmanager.enable (or .Values.webhook.enable .Values.metrics.enable) }}
+          {{- if .Values.manager.securityContext }}
+          {{- toYaml .Values.manager.securityContext | nindent 10 }}
+          {{- else }}
+          {}
+          {{- end }}
         volumeMounts:
-          {{- if and .Values.webhook.enable .Values.certmanager.enable }}
-          - name: webhook-cert
-            mountPath: /tmp/k8s-webhook-server/serving-certs
+          {{- if .Values.manager.extraVolumeMounts }}
+          {{- toYaml .Values.manager.extraVolumeMounts | nindent 10 }}
+          {{- end }}
+          {{- if and .Values.certManager.enabled .Values.metrics.enabled .Values.metrics.secure }}
+          - mountPath: /tmp/k8s-metrics-server/metrics-certs
+            name: metrics-certs
             readOnly: true
           {{- end }}
-          {{- if and .Values.metrics.enable .Values.certmanager.enable }}
-          - name: metrics-certs
-            mountPath: /tmp/k8s-metrics-server/metrics-certs
+          {{- if .Values.certManager.enabled }}
+          - mountPath: /tmp/k8s-webhook-server/serving-certs
+            name: webhook-certs
             readOnly: true
           {{- end }}
-        {{- end }}
       securityContext:
-        {{- toYaml .Values.securityContext | nindent 8 }}
-      serviceAccountName: {{ .Values.serviceAccount.name }}
-      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
-      {{- if and .Values.certmanager.enable (or .Values.webhook.enable .Values.metrics.enable) }}
-      volumes:
-        {{- if and .Values.webhook.enable .Values.certmanager.enable }}
-        - name: webhook-cert
-          secret:
-            secretName: {{ include "chart.name" . }}-webhook-server-cert
+        {{- if .Values.manager.podSecurityContext }}
+        {{- toYaml .Values.manager.podSecurityContext | nindent 8 }}
+        {{- else }}
+        {}
         {{- end }}
-        {{- if and .Values.metrics.enable .Values.certmanager.enable }}
+      serviceAccountName: {{ include "kubedns-shepherd.serviceAccountName" . }}
+      {{- if and (hasKey .Values.manager "terminationGracePeriodSeconds") (ne .Values.manager.terminationGracePeriodSeconds nil) }}
+      terminationGracePeriodSeconds: {{ .Values.manager.terminationGracePeriodSeconds }}
+      {{- end }}
+      volumes:
+        {{- if .Values.manager.extraVolumes }}
+        {{- toYaml .Values.manager.extraVolumes | nindent 8 }}
+        {{- end }}
+        {{- if and .Values.certManager.enabled .Values.metrics.enabled .Values.metrics.secure }}
         - name: metrics-certs
           secret:
-            secretName: {{ include "chart.name" . }}-metrics-server-cert
+            items:
+            - key: ca.crt
+              path: ca.crt
+            - key: tls.crt
+              path: tls.crt
+            - key: tls.key
+              path: tls.key
+            optional: false
+            secretName: metrics-server-cert
         {{- end }}
-      {{- end }}
+        {{- if .Values.certManager.enabled }}
+        - name: webhook-certs
+          secret:
+            secretName: webhook-server-cert
+        {{- end }}
+{{- end }}

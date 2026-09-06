@@ -2,13 +2,15 @@
 apiVersion: config.kubedns-shepherd.io/v1alpha1
 kind: DNSClass
 metadata:
-  name: {{ include "chart.name" . }}-dnsclass-config
+  labels:
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "kubedns-shepherd.name" . }}
+    helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
   annotations:
     helm.sh/hook: post-install,post-upgrade
     helm.sh/hook-weight: "2"
-  labels:
-    control-plane: controller-manager
-  {{- include "chart.labels" . | nindent 4 }}
+  name: {{ include "kubedns-shepherd.resourceName" (dict "suffix" "dnsclass-config" "context" $) }}
 spec:
   allowedNamespaces:
     {{- toYaml .Values.dnsclass.allowedNamespaces | nindent 4 }}

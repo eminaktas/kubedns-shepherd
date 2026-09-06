@@ -1,29 +1,25 @@
-{{- if .Values.networkPolicy.enable }}
-# This NetworkPolicy allows ingress traffic
-# with Pods running on namespaces labeled with 'metrics: enabled'. Only Pods on those
-# namespaces are able to gather data from the metrics endpoint.
+{{- if .Values.networkPolicy.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   labels:
-    control-plane: controller-manager
-    {{- include "chart.labels" . | nindent 4 }}
-  name: {{ include "chart.name" . }}-allow-metrics-traffic
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/name: {{ include "kubedns-shepherd.name" . }}
+  name: {{ include "kubedns-shepherd.resourceName" (dict "suffix" "allow-metrics-traffic" "context" $) }}
   namespace: {{ .Release.Namespace }}
 spec:
   podSelector:
     matchLabels:
       control-plane: controller-manager
-      {{- include "chart.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/name: {{ include "kubedns-shepherd.name" . }}
   policyTypes:
     - Ingress
   ingress:
-    # This allows ingress traffic from any namespace with the label metrics: enabled
     - from:
       - namespaceSelector:
           matchLabels:
-            metrics: enabled  # Only from namespaces with this label
+            metrics: enabled
       ports:
-        - port: 8443
+        - port: {{ .Values.metrics.port }}
           protocol: TCP
-{{- end -}}
+{{- end }}

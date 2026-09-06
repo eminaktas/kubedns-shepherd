@@ -18,15 +18,17 @@ jobs:
     # Pull requests from the same repository won't trigger this checks as they were already triggered by the push
     if: (github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository)
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-      - name: Set Up Go
-        uses: actions/setup-go@v5
+      - name: Clone the code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-          cache-dependency-path: go.sum
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v8
-        with:
-          args: --timeout=30m --verbose
-          skip-cache: true
+
+      - name: Check linter configuration
+        run: make lint-config
+      - name: Run linter
+        run: make lint

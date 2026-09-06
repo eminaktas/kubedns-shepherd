@@ -96,6 +96,10 @@ Nameservers can also be configured automatically by controller if they are not d
 - **Issue**: Kubernetes Pods experienced failures in DNS queries for the first attempts due to the `ndots` option set to 5 in `resolv.conf`.
 - **Solution**: Optimize the environment by using this controller to adjust `ndots` and `searches` options in `resolv.conf`.
 
+For a detailed explanation of the query amplification caused by `ndots:5`, the
+project's origin, implementation alternatives, and a reproducible before/after
+demo, see [Understanding Kubernetes DNS query amplification](docs/dns-query-amplification.md).
+
 ## Contributing
 
 Please read our [Contributing Guidelines](CONTRIBUTING.md) before contributing.

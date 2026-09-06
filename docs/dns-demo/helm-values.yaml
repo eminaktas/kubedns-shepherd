@@ -1,0 +1,24 @@
+manager:
+  replicas: 1
+
+dnsclass:
+  enable: true
+  disabledNamespaces:
+    - kube-system
+  allowedNamespaces:
+    - dns-ndots-shepherd
+  allowedDNSPolicies:
+    - ClusterFirst
+    - ClusterFirstWithHostNet
+    - None
+  dnsPolicy: None
+  dnsConfig:
+    nameservers:
+      - 10.96.0.53
+    searches:
+      - "svc.{{ .clusterDomain }}"
+      - "{{ .podNamespace }}.svc.{{ .clusterDomain }}"
+    options:
+      - name: ndots
+        value: "2"
+      - name: edns0

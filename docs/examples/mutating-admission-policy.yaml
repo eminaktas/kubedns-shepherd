@@ -1,0 +1,60 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: default-dns-ndots.kubedns-shepherd.io
+spec:
+  failurePolicy: Fail
+  reinvocationPolicy: Never
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+  matchConditions:
+    - name: supported-dns-policy
+      expression: >-
+        !has(object.spec.dnsPolicy) ||
+        object.spec.dnsPolicy in ["ClusterFirst", "ClusterFirstWithHostNet", "None"]
+  mutations:
+    - patchType: JSONPatch
+      jsonPatch:
+        expression: >-
+          [
+            JSONPatch{
+              op: "add",
+              path: "/spec/dnsPolicy",
+              value: "None"
+            },
+            JSONPatch{
+              op: "add",
+              path: "/spec/dnsConfig",
+              value: Object.spec.dnsConfig{
+                nameservers: ["10.96.0.53"],
+                searches: [
+                  "svc.example.test",
+                  "default.svc.example.test"
+                ],
+                options: [
+                  Object.spec.dnsConfig.options{
+                    name: "ndots",
+                    value: "2"
+                  },
+                  Object.spec.dnsConfig.options{
+                    name: "edns0"
+                  }
+                ]
+              }
+            }
+          ]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicyBinding
+metadata:
+  name: default-dns-ndots.kubedns-shepherd.io
+spec:
+  policyName: default-dns-ndots.kubedns-shepherd.io
+  matchResources:
+    objectSelector:
+      matchLabels:
+        kubedns-shepherd.io/dns-ndots-policy: enabled

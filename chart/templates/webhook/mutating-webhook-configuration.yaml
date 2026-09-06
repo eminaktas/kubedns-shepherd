@@ -14,26 +14,6 @@ webhooks:
     service:
       name: {{ include "kubedns-shepherd.resourceName" (dict "suffix" "webhook-service" "context" $) }}
       namespace: {{ .Release.Namespace }}
-      path: /mutate-v1-pod
-  failurePolicy: Ignore
-  name: mpod.kubedns-shepherd.io
-  rules:
-  - apiGroups:
-    - ""
-    apiVersions:
-    - v1
-    operations:
-    - CREATE
-    - UPDATE
-    resources:
-    - pods
-  sideEffects: None
-- admissionReviewVersions:
-  - v1
-  clientConfig:
-    service:
-      name: {{ include "kubedns-shepherd.resourceName" (dict "suffix" "webhook-service" "context" $) }}
-      namespace: {{ .Release.Namespace }}
       path: /mutate-config-kubedns-shepherd-io-v1alpha1-dnsclass
   failurePolicy: Fail
   name: mdnsclass.kubedns-shepherd.io
@@ -47,5 +27,25 @@ webhooks:
     - UPDATE
     resources:
     - dnsclasses
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: {{ include "kubedns-shepherd.resourceName" (dict "suffix" "webhook-service" "context" $) }}
+      namespace: {{ .Release.Namespace }}
+      path: /mutate-v1-pod
+  failurePolicy: Ignore
+  name: mpod.kubedns-shepherd.io
+  rules:
+  - apiGroups:
+    - ""
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - pods
   sideEffects: None
 {{- end }}

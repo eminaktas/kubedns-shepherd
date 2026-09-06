@@ -1,0 +1,14 @@
+apiVersion: kind.x-k8s.io/v1alpha4
+kind: Cluster
+kubeadmConfigPatches:
+  - |
+    apiVersion: kubeadm.k8s.io/v1beta4
+    kind: ClusterConfiguration
+    networking:
+      dnsDomain: example.test
+  - |
+    apiVersion: kubelet.config.k8s.io/v1beta1
+    kind: KubeletConfiguration
+    clusterDNS:
+      - 10.96.0.53
+    clusterDomain: example.test

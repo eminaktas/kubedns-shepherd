@@ -1,0 +1,110 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dns-observer
+  namespace: dns-ndots-demo
+data:
+  Corefile: |
+    .:53 {
+        errors
+        log
+        health :8080
+        ready :8181
+        prometheus :9153
+        reload
+        template IN A external.test {
+            match "^api[.]prod[.]external[.]test[.]$"
+            answer "{{ .Name }} 0 IN A 192.0.2.10"
+            fallthrough
+        }
+        forward . 10.96.0.10
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dns-observer
+  namespace: dns-ndots-demo
+  labels:
+    app.kubernetes.io/name: dns-observer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dns-observer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dns-observer
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: coredns
+          image: DNS_OBSERVER_IMAGE
+          imagePullPolicy: IfNotPresent
+          args:
+            - -conf
+            - /etc/coredns/Corefile
+          ports:
+            - name: dns-udp
+              containerPort: 53
+              protocol: UDP
+            - name: dns-tcp
+              containerPort: 53
+              protocol: TCP
+            - name: metrics
+              containerPort: 9153
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8181
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - NET_BIND_SERVICE
+          volumeMounts:
+            - name: config
+              mountPath: /etc/coredns
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: dns-observer
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dns-observer
+  namespace: dns-ndots-demo
+spec:
+  clusterIP: 10.96.0.53
+  selector:
+    app.kubernetes.io/name: dns-observer
+  ports:
+    - name: dns-udp
+      port: 53
+      targetPort: dns-udp
+      protocol: UDP
+    - name: dns-tcp
+      port: 53
+      targetPort: dns-tcp
+      protocol: TCP
+    - name: metrics
+      port: 9153
+      targetPort: metrics
+      protocol: TCP

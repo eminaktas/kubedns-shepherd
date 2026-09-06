@@ -121,7 +121,7 @@ vet: ## Run go vet against code.
 .PHONY: test
 test: manifests generate fmt vet setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" go test $$(go list ./... | grep -vE '/test|/cmd') -coverprofile cover.out.tmp
-	cat cover.out.tmp | grep -v "zz_generated" > cover.out && rm cover.out.tmp
+	grep -vE "zz_generated|docs/dns-demo/" cover.out.tmp > cover.out && rm cover.out.tmp
 
 # The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
 # kubectl kuberc is disabled by default for test isolation; enable with:

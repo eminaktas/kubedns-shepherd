@@ -5,6 +5,8 @@ permissions:
 
 on:
   push:
+    branches:
+      - main
   pull_request:
 
 concurrency:
@@ -15,8 +17,6 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
-    # Pull requests from the same repository won't trigger this checks as they were already triggered by the push
-    if: (github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository)
     steps:
       - name: Clone the code
         uses: actions/checkout@v7
@@ -42,7 +42,7 @@ jobs:
       - name: Report failure
         uses: nashmaniac/create-issue-action@v1.2
         # Only report failures of pushes (PRs have are visible through the Checks section) to the default branch
-        if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/master'
+        if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:
           title: 🐛 Unit tests failed for ${{ github.sha }}
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -54,8 +54,6 @@ jobs:
     needs:
       - test
     runs-on: ubuntu-latest
-    # Pull requests from the same repository won't trigger this checks as they were already triggered by the push
-    if: (github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository)
     steps:
       - name: Clone the code
         uses: actions/checkout@v7

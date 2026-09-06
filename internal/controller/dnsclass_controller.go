@@ -132,7 +132,7 @@ func (r *DNSClassReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 }
 
 // extractField retrieves a field from the kubelet configuration and asserts its type.
-func (r *DNSClassReconciler) extractField(ctx context.Context, fieldName string, targetType string) (interface{}, error) {
+func (r *DNSClassReconciler) extractField(ctx context.Context, fieldName string, targetType string) (any, error) {
 	data, err := r.fetchNodeProxyConfigz(ctx)
 	if err != nil {
 		return nil, err
@@ -151,7 +151,7 @@ func (r *DNSClassReconciler) extractField(ctx context.Context, fieldName string,
 		}
 		return value, nil
 	case "[]string":
-		interfaceSlice, ok := fieldValue.([]interface{})
+		interfaceSlice, ok := fieldValue.([]any)
 		if !ok {
 			return nil, fmt.Errorf("%s field is not a slice", fieldName)
 		}
@@ -200,7 +200,7 @@ func (r *DNSClassReconciler) discoverFields(ctx context.Context, discoveredField
 
 // fetchNodeProxyConfig retrieves the kubelet proxy configuration from a random node
 // Follow up for future improvement: https://github.com/stackabletech/issues/issues/662
-func (r *DNSClassReconciler) fetchNodeProxyConfigz(ctx context.Context) (map[string]interface{}, error) {
+func (r *DNSClassReconciler) fetchNodeProxyConfigz(ctx context.Context) (map[string]any, error) {
 	nodeList := &corev1.NodeList{}
 	if err := r.List(ctx, nodeList); err != nil {
 		return nil, fmt.Errorf("failed to list nodes: %w", err)
@@ -236,12 +236,12 @@ func (r *DNSClassReconciler) fetchNodeProxyConfigz(ctx context.Context) (map[str
 		return nil, fmt.Errorf("failed to get raw data from node %s: %w", selectedNode, err)
 	}
 
-	var config map[string]interface{}
+	var config map[string]any
 	if err := json.Unmarshal(rawData, &config); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	kubeletConfig, ok := config["kubeletconfig"].(map[string]interface{})
+	kubeletConfig, ok := config["kubeletconfig"].(map[string]any)
 	if !ok {
 		return nil, errors.New("kubeletconfig field is not a map or is not found")
 	}

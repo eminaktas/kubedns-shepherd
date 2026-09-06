@@ -134,7 +134,7 @@ func (p *PodMutator) getDNSClass(ctx context.Context, pod *corev1.Pod) (configv1
 func configureDNSForPod(pod *corev1.Pod, dnsClass configv1alpha1.DNSClass) error {
 	if dnsClass.Spec.DNSPolicy == corev1.DNSNone {
 		searches := []string{}
-		parameterMap := map[string]interface{}{}
+		parameterMap := map[string]any{}
 
 		// Add podNamespace if it exists
 		if pod.Namespace != "" {

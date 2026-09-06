@@ -1,6 +1,6 @@
 module github.com/eminaktas/kubedns-shepherd
 
-go 1.27.1
+go 1.26.8
 
 require (
 	github.com/eminaktas/go-version v0.1.0

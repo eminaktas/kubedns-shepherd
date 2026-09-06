@@ -267,8 +267,8 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 
 		It("should fail to apply DNSClass to pod due to state is not ready", func() {
 			By("Tampering the configz response")
-			utils.MockResponse = map[string]interface{}{
-				"kubeletconfig": map[string]interface{}{
+			utils.MockResponse = map[string]any{
+				"kubeletconfig": map[string]any{
 					"clusterDNS": []string{utils.ClusterDNS},
 				},
 			}
@@ -286,8 +286,8 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 
 		It("should not apply DNSClass to pod when nameservers field is missing", func() {
 			By("Tampering the configz response")
-			utils.MockResponse = map[string]interface{}{
-				"kubeletconfig": map[string]interface{}{},
+			utils.MockResponse = map[string]any{
+				"kubeletconfig": map[string]any{},
 			}
 			dnsconfig := &corev1.PodDNSConfig{}
 			createAndValidateDNSClass(dnsconfig, corev1.DNSNone, []string{ns.Name}, nil, nil, configv1alpha1.StateReady)
@@ -398,7 +398,7 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 					Name:      TestPodStr,
 					Namespace: TestNamespaceStr,
 					ManagedFields: []metav1.ManagedFieldsEntry{{
-						FieldsV1: &metav1.FieldsV1{Raw: []byte("{")},
+						FieldsV1: metav1.NewFieldsV1("{"),
 					}},
 				},
 				Spec: corev1.PodSpec{DNSPolicy: corev1.DNSClusterFirst},

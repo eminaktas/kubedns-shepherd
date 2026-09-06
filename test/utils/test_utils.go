@@ -41,8 +41,8 @@ const (
 	dnsclassGenerateName = "test-dnsclass-"
 )
 
-var MockResponse interface{} = map[string]interface{}{
-	"kubeletconfig": map[string]interface{}{
+var MockResponse any = map[string]any{
+	"kubeletconfig": map[string]any{
 		"clusterDomain": ClusterDomain,
 		"clusterDNS":    []string{ClusterDNS},
 	},
@@ -53,8 +53,8 @@ var MockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,
 	if r.URL.Path == fmt.Sprintf("/api/v1/nodes/%s/proxy/configz", NodeName) {
 		w.Header().Set("Content-Type", "application/json")
 		if MockResponse == nil {
-			MockResponse = map[string]interface{}{
-				"kubeletconfig": map[string]interface{}{
+			MockResponse = map[string]any{
+				"kubeletconfig": map[string]any{
 					"clusterDomain": ClusterDomain,
 					"clusterDNS":    []string{ClusterDNS},
 				},

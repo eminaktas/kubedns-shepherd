@@ -10,16 +10,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Clone the code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
       - name: Install the latest version of kind
         run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-$(go env GOARCH)
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
 
@@ -32,25 +34,26 @@ jobs:
       - name: Prepare kubedns-shepherd
         run: |
           go mod tidy
-          make docker-build IMG=kubedns-shepherd:v0.1.0
-          kind load docker-image kubedns-shepherd:v0.1.0
+          make docker-build
+          kind load docker-image $IMG
 
       - name: Install Helm
-        run: |
-          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-
-      - name: Verify Helm installation
-        run: helm version
+        run: make install-helm
 
       - name: Lint Helm Chart
         run: |
           helm lint ./chart/kubedns-shepherd
 
-      - name: Install cert-manager via Helm
+      - name: Install cert-manager via Helm (wait for readiness)
         run: |
           helm repo add jetstack https://charts.jetstack.io
           helm repo update
-          helm install cert-manager jetstack/cert-manager --namespace cert-manager --create-namespace --set crds.enabled=true
+          helm install cert-manager jetstack/cert-manager \
+            --namespace cert-manager \
+            --create-namespace \
+            --set crds.enabled=true \
+            --wait \
+            --timeout 300s
 
       - name: Wait for cert-manager to be ready
         run: |
@@ -64,26 +67,11 @@ jobs:
 #          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 #          helm repo update
 #          helm install prometheus-crds prometheus-community/prometheus-operator-crds
-#
-#      - name: Install Prometheus via Helm
-#        run: |
-#          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-#          helm repo update
-#          helm install prometheus prometheus-community/prometheus --namespace monitoring --create-namespace
-#
-#      - name: Wait for Prometheus to be ready
-#        run: |
-#          kubectl wait --namespace monitoring --for=condition=available --timeout=300s deployment/prometheus-server
 
-      - name: Install Helm chart for project
+      - name: Deploy manager via Helm
         run: |
-          helm install my-release ./chart/kubedns-shepherd --create-namespace --namespace kubedns-shepherd-system
+          make helm-deploy
 
       - name: Check Helm release status
         run: |
-          helm status my-release --namespace kubedns-shepherd-system
-
-# TODO: Uncomment if prometheus.enabled is set to true to confirm that the ServiceMonitor gets created
-#      - name: Check Presence of ServiceMonitor
-#        run: |
-#          kubectl wait --namespace kubedns-shepherd-system --for=jsonpath='{.kind}'=ServiceMonitor servicemonitor/kubedns-shepherd-controller-manager-metrics-monitor
+          make helm-status

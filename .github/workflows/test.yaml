@@ -18,22 +18,27 @@ jobs:
     # Pull requests from the same repository won't trigger this checks as they were already triggered by the push
     if: (github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository)
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-      - name: Set Up Go
-        uses: actions/setup-go@v5
+      - name: Clone the code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-          cache-dependency-path: go.sum
-      - name: Perform the test
+
+      - name: Running Tests
         run: |
           go mod tidy
           make test
+
       - name: Upload cover.out
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: cover.out
+
       - name: Report failure
         uses: nashmaniac/create-issue-action@v1.2
         # Only report failures of pushes (PRs have are visible through the Checks section) to the default branch
@@ -52,17 +57,21 @@ jobs:
     # Pull requests from the same repository won't trigger this checks as they were already triggered by the push
     if: (github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository)
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - name: Clone the code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-          cache-dependency-path: go.sum
+
       - name: Download cover.out
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: coverage-report
+
       - name: Send the coverage output
         uses: shogo82148/actions-goveralls@v1
         with:

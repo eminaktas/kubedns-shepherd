@@ -16,17 +16,19 @@ jobs:
       packages: write
       pull-requests: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Clone the code
+        uses: actions/checkout@v7
         with:
-          fetch-depth: 0
-      - name: Set up Go
-        uses: actions/setup-go@v5
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-          cache-dependency-path: go.sum
+
       - name: Install Syft
         uses: anchore/sbom-action/download-syft@v0
+
       - name: Get Previous Tag
         id: get_previous_tag
         run: |
@@ -43,8 +45,9 @@ jobs:
 
           echo "Previous tag selected: $previous_tag"
           echo "PREVIOUS_TAG=$previous_tag" >> $GITHUB_ENV
+
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
           version: latest
@@ -52,6 +55,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_PREVIOUS_TAG: ${{ env.PREVIOUS_TAG }}
+
       - name: Publish Helm charts
         uses: stefanprodan/helm-gh-pages@master
         with:

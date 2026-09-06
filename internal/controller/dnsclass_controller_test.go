@@ -150,8 +150,8 @@ var _ = Describe("DNSClass Controller", Ordered, func() {
 
 		It("should not populate discovered field but DNSClass should be available", func() {
 			By("Tampering the configz response")
-			utils.MockResponse = map[string]interface{}{
-				KubeletConfigStr: map[string]interface{}{},
+			utils.MockResponse = map[string]any{
+				KubeletConfigStr: map[string]any{},
 			}
 
 			By("Creating a DNSClass with only podNamespace templating key")
@@ -184,8 +184,8 @@ var _ = Describe("DNSClass Controller", Ordered, func() {
 
 		It("should fail to reconcile DNSClass due to missing discovered fields", func() {
 			By("Tampering the configz response")
-			utils.MockResponse = map[string]interface{}{
-				KubeletConfigStr: map[string]interface{}{
+			utils.MockResponse = map[string]any{
+				KubeletConfigStr: map[string]any{
 					ClusterDNSStr: []string{utils.ClusterDNS},
 				},
 			}
@@ -217,8 +217,8 @@ var _ = Describe("DNSClass Controller", Ordered, func() {
 
 		It("should fail to test string and slice fields", func() {
 			By("Tampering the configz response")
-			utils.MockResponse = map[string]interface{}{
-				KubeletConfigStr: map[string]interface{}{
+			utils.MockResponse = map[string]any{
+				KubeletConfigStr: map[string]any{
 					"clusterDNS":    "random-string",
 					"clusterDomain": []string{"random-string"},
 				},
@@ -249,8 +249,8 @@ var _ = Describe("DNSClass Controller", Ordered, func() {
 
 		It("should fail to test string for slice field", func() {
 			By("Tampering the configz response")
-			utils.MockResponse = map[string]interface{}{
-				KubeletConfigStr: map[string]interface{}{
+			utils.MockResponse = map[string]any{
+				KubeletConfigStr: map[string]any{
 					"clusterDNS": []bool{true},
 				},
 			}
@@ -280,8 +280,8 @@ var _ = Describe("DNSClass Controller", Ordered, func() {
 
 		It("should fail to test field due to unsupported target type", func() {
 			By("Tampering the configz response")
-			utils.MockResponse = map[string]interface{}{
-				KubeletConfigStr: map[string]interface{}{
+			utils.MockResponse = map[string]any{
+				KubeletConfigStr: map[string]any{
 					"dummy": []bool{true},
 				},
 			}
@@ -343,7 +343,7 @@ var _ = Describe("DNSClass Controller", Ordered, func() {
 
 		It("should fail to test field due to find kubeletconfig", func() {
 			By("Tampering the configz response")
-			utils.MockResponse = map[string]interface{}{
+			utils.MockResponse = map[string]any{
 				"dummy": true,
 			}
 

@@ -33,7 +33,7 @@ builds:
 kos:
   - build: kubedns-shepherd
     main: ./cmd/...
-    base_image: ghcr.io/distroless/static:latest
+    base_image: gcr.io/distroless/static-debian13:nonroot
     repositories:
       - ghcr.io/eminaktas/kubedns-shepherd
     tags:

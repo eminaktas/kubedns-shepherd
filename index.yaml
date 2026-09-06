@@ -4,12 +4,12 @@ entries:
   - annotations:
       kubebuilder.io/generated-by: kubebuilder
     apiVersion: v2
-    appVersion: 0.4.4
-    created: "2026-09-06T06:35:14.998816121Z"
+    appVersion: v0.4.4
+    created: "2026-09-06T10:49:54.548313142Z"
     description: 'A Kubernetes controller that manages the DNS configuration of workloads,
       ensuring efficient and reliable way to configure DNS within your Kubernetes
       cluster. '
-    digest: f514792ab527ec15423d2b018e63d3b030469981feca4f2eeebc17ed09d3e927
+    digest: d7a2d867285db40577d67905c329dd1d76b60efe3ec4afab783cf8f5234563b6
     keywords:
     - kubernetes
     - operator
@@ -333,4 +333,4 @@ entries:
     urls:
     - https://eminaktas.github.io/kubedns-shepherd/kubedns-shepherd-0.1.4.tgz
     version: 0.1.4
-generated: "2026-09-06T06:35:14.996628184Z"
+generated: "2026-09-06T10:49:54.546701759Z"

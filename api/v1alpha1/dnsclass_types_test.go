@@ -6,6 +6,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 func TestDNSClass(t *testing.T) {
@@ -14,6 +15,16 @@ func TestDNSClass(t *testing.T) {
 }
 
 var _ = Describe("DNSClass", func() {
+	Describe("AddToScheme", func() {
+		It("registers DNSClass API types", func() {
+			scheme := runtime.NewScheme()
+
+			Expect(AddToScheme(scheme)).To(Succeed())
+			Expect(scheme.Recognizes(SchemeGroupVersion.WithKind("DNSClass"))).To(BeTrue())
+			Expect(scheme.Recognizes(SchemeGroupVersion.WithKind("DNSClassList"))).To(BeTrue())
+		})
+	})
+
 	Describe("ExtractTemplateKeysRegex", func() {
 		It("returns unique keys discovered in DNSConfig searches in order", func() {
 			dnsClass := &DNSClass{

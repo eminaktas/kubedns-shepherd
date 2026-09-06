@@ -54,11 +54,11 @@ entries:
     version: 0.4.4-rc.0
   - apiVersion: v2
     appVersion: v0.4.3
-    created: "2026-06-22T08:08:15.581311083Z"
+    created: "2026-09-06T06:23:46.569360985Z"
     description: A Kubernetes controller that manages the DNS configuration of workloads,
       ensuring efficient and reliable way to configure DNS within your Kubernetes
       cluster.
-    digest: 02e23da2e381f23572dc87763b33581e24fc50f6d7cf2aef284facaf30ec15cf
+    digest: 40a8879f0e6c1e5a4fc81ca6f40f833cd2631b23f19b9487fe05ffcdd31b319f
     name: kubedns-shepherd
     type: application
     urls:
@@ -316,4 +316,4 @@ entries:
     urls:
     - https://eminaktas.github.io/kubedns-shepherd/kubedns-shepherd-0.1.4.tgz
     version: 0.1.4
-generated: "2026-09-06T06:10:43.622345227Z"
+generated: "2026-09-06T06:23:46.568312307Z"

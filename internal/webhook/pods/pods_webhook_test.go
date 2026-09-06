@@ -35,6 +35,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	utilptr "k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 var (
@@ -48,6 +49,19 @@ var (
 	SearchesStr1          = "svc.{{ .clusterDomain }}"
 	SearchesStr2          = "{{ .podNamespace }}.svc.{{ .clusterDomain }}"
 )
+
+type staticPodDecoder struct {
+	pod *corev1.Pod
+}
+
+func (d staticPodDecoder) Decode(_ admission.Request, into runtime.Object) error {
+	d.pod.DeepCopyInto(into.(*corev1.Pod))
+	return nil
+}
+
+func (d staticPodDecoder) DecodeRaw(runtime.RawExtension, runtime.Object) error {
+	return nil
+}
 
 var _ = Describe("Pods Webhook Controller", Ordered, func() {
 	const (
@@ -366,6 +380,41 @@ var _ = Describe("Pods Webhook Controller", Ordered, func() {
 			dnsClass, err := podMutator.getDNSClass(context.TODO(), pod)
 			Expect(dnsClass).Should(Equal(configv1alpha1.DNSClass{}))
 			Expect(err).Should(HaveOccurred())
+		})
+
+		It("should allow the pod when the mutated object cannot be marshaled", func() {
+			localScheme := runtime.NewScheme()
+			Expect(configv1alpha1.AddToScheme(localScheme)).To(Succeed())
+			localDNSClass := &configv1alpha1.DNSClass{
+				ObjectMeta: metav1.ObjectMeta{Name: "ready-dnsclass"},
+				Spec: configv1alpha1.DNSClassSpec{
+					DNSPolicy:          corev1.DNSClusterFirst,
+					AllowedDNSPolicies: []corev1.DNSPolicy{corev1.DNSClusterFirst},
+				},
+				Status: configv1alpha1.DNSClassStatus{State: configv1alpha1.StateReady},
+			}
+			localPod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      TestPodStr,
+					Namespace: TestNamespaceStr,
+					ManagedFields: []metav1.ManagedFieldsEntry{{
+						FieldsV1: &metav1.FieldsV1{Raw: []byte("{")},
+					}},
+				},
+				Spec: corev1.PodSpec{DNSPolicy: corev1.DNSClusterFirst},
+			}
+			podMutator := &PodMutator{
+				Client:  fake.NewClientBuilder().WithScheme(localScheme).WithObjects(localDNSClass).Build(),
+				Decoder: staticPodDecoder{pod: localPod},
+			}
+			request := admission.Request{AdmissionRequest: admissionv1.AdmissionRequest{
+				Object: runtime.RawExtension{Raw: []byte("{}")},
+			}}
+
+			response := podMutator.Handle(context.Background(), request)
+
+			Expect(response.Allowed).To(BeTrue())
+			Expect(response.Result.Message).To(Equal(ErrMarshal.Error()))
 		})
 
 		It("should fail at template execute due to missing key", func() {

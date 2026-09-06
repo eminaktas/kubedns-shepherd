@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -26,8 +27,14 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
 
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+	"k8s.io/client-go/tools/events"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	configv1alpha1 "github.com/eminaktas/kubedns-shepherd/api/v1alpha1"
 	"github.com/eminaktas/kubedns-shepherd/test/utils"
@@ -378,6 +385,79 @@ var _ = Describe("DNSClass Controller", Ordered, func() {
 
 			// Add back the node for other tests
 			Expect(utils.AddNode(ctx, k8sClient)).Should(Succeed(), "Failed to add back the dummy node")
+		})
+	})
+
+	Context("When handling client errors directly", func() {
+		var scheme *runtime.Scheme
+
+		BeforeEach(func() {
+			scheme = runtime.NewScheme()
+			Expect(configv1alpha1.AddToScheme(scheme)).To(Succeed())
+		})
+
+		It("should return an unexpected DNSClass get error", func() {
+			expectedErr := errors.New("get failed")
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Get: func(context.Context, client.WithWatch, client.ObjectKey, client.Object, ...client.GetOption) error {
+						return expectedErr
+					},
+				}).
+				Build()
+			reconciler := &DNSClassReconciler{Client: fakeClient}
+
+			result, err := reconciler.Reconcile(context.Background(), ctrl.Request{})
+
+			Expect(result).To(Equal(ctrl.Result{}))
+			Expect(err).To(MatchError(expectedErr))
+		})
+
+		It("should initialize state even when the deferred status update fails", func() {
+			expectedErr := errors.New("status update failed")
+			dnsclass := &configv1alpha1.DNSClass{}
+			dnsclass.Name = "status-update-failure"
+			dnsclass.Spec.DNSPolicy = corev1.DNSClusterFirst
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithStatusSubresource(&configv1alpha1.DNSClass{}).
+				WithObjects(dnsclass).
+				WithInterceptorFuncs(interceptor.Funcs{
+					SubResourceUpdate: func(context.Context, client.Client, string, client.Object, ...client.SubResourceUpdateOption) error {
+						return expectedErr
+					},
+				}).
+				Build()
+			reconciler := &DNSClassReconciler{
+				Client:        fakeClient,
+				EventRecorder: events.NewFakeRecorder(2),
+			}
+
+			result, err := reconciler.Reconcile(context.Background(), ctrl.Request{
+				NamespacedName: client.ObjectKey{Name: dnsclass.Name},
+			})
+
+			Expect(result).To(Equal(ctrl.Result{}))
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("should return a node list error", func() {
+			expectedErr := errors.New("list failed")
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithInterceptorFuncs(interceptor.Funcs{
+					List: func(context.Context, client.WithWatch, client.ObjectList, ...client.ListOption) error {
+						return expectedErr
+					},
+				}).
+				Build()
+			reconciler := &DNSClassReconciler{Client: fakeClient}
+
+			config, err := reconciler.fetchNodeProxyConfigz(context.Background())
+
+			Expect(config).To(BeNil())
+			Expect(err).To(MatchError("failed to list nodes: list failed"))
 		})
 	})
 })
